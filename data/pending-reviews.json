@@ -1,0 +1,30 @@
+[
+  {
+    "id": 3,
+    "author": "Аноним",
+    "email": "anon@temp.com",
+    "phone": "+79031112233",
+    "rating": 3,
+    "content": "Средний сервис, могли бы быть лучше",
+    "created_at": "2024-03-14 18:45:00"
+  },
+  {
+    "id": 5,
+    "author": "Сергей Иванов",
+    "email": "sergio@gmail.com",
+    "phone": null,
+    "rating": 2,
+    "content": "Не понравилось обслуживание, долго ждал заказ",
+    "created_at": "2024-03-16 16:10:00"
+  },
+  {
+    "id": 6,
+    "name": "sfaff",
+    "email": "asfsfafss@mail.ru",
+    "phone": null,
+    "rating": 5,
+    "content": "afasff",
+    "created_at": "2025-04-18T19:20:27.430Z",
+    "status": "pending"
+  }
+]

@@ -1,0 +1,47 @@
+[
+    {
+      "city": "Сочи",
+      "districts": [
+        {
+          "name": "Точки самовывоза",
+          "delivery_cost": 0,
+          "free_from": 0
+        },
+        {
+          "name": "Центральный (Светлана, Бытха, Транспортная)",
+          "delivery_cost": 100,
+          "free_from": 2500
+        },
+        {
+          "name": "КСМ-Барановка",
+          "delivery_cost": 150,
+          "free_from": 3000
+        },
+        {
+          "name": "Хостинский (от Мацесты до Хосты)",
+          "delivery_cost": 200,
+          "free_from": 3000
+        },
+        {
+          "name": "Адлерский (от Кудепсты до Адлера-Центр)",
+          "delivery_cost": 300,
+          "free_from": 5000
+        },
+        {
+          "name": "Олимпийский парк",
+          "delivery_cost": 300,
+          "free_from": 5500
+        },
+        {
+          "name": "Нижнеимеритинская бухта (Совхоз Россия, Веселое)",
+          "delivery_cost": 500,
+          "free_from": 9000
+        },
+        {
+          "name": "Дагомыс",
+          "delivery_cost": 200,
+          "free_from": 4000
+        }
+      ]
+    }
+  ]

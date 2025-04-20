@@ -1,0 +1,108 @@
+{
+  "type": "hierarchical",
+  "categories": [
+    {
+      "id": 1,
+      "parent_id": null,
+      "name": "Для кошек",
+      "subcategories": [
+        {
+          "id": 12,
+          "parent_id": 1,
+          "name": "Корм сухой",
+          "level": 1,
+          "subcategories": []
+        },
+        {
+          "id": 13,
+          "parent_id": 1,
+          "name": "Корм влажный",
+          "level": 1,
+          "subcategories": []
+        },
+        {
+          "id": 14,
+          "parent_id": 1,
+          "name": "Лакомства",
+          "level": 1,
+          "subcategories": []
+        }
+      ],
+      "level": 0
+    },
+    {
+      "id": 2,
+      "parent_id": null,
+      "name": "Для собак",
+      "subcategories": [
+        {
+          "id": 15,
+          "parent_id": 2,
+          "name": "Корм для щенков",
+          "level": 1,
+          "subcategories": []
+        },
+        {
+          "id": 16,
+          "parent_id": 2,
+          "name": "Корм для взрослых",
+          "level": 1,
+          "subcategories": []
+        }
+      ],
+      "level": 0
+    },
+    {
+      "id": 3,
+      "parent_id": null,
+      "name": "Для птиц/грызунов",
+      "subcategories": [
+        {
+          "id": 17,
+          "parent_id": 3,
+          "name": "Корм для попугаев",
+          "level": 1,
+          "subcategories": []
+        }
+      ],
+      "level": 0
+    },
+    {
+      "id": 4,
+      "parent_id": null,
+      "name": "Для рыб/черепах",
+      "subcategories": [
+        {
+          "id": 18,
+          "parent_id": 4,
+          "name": "Корма",
+          "level": 1,
+          "subcategories": []
+        },
+        {
+          "id": 19,
+          "parent_id": 4,
+          "name": "Аксессуары",
+          "level": 1,
+          "subcategories": []
+        }
+      ],
+      "level": 0
+    },
+    {
+      "id": 1744518483179,
+      "parent_id": null,
+      "name": "test1",
+      "level": 0,
+      "subcategories": [
+        {
+          "id": 1745011918417,
+          "parent_id": 1744518483179,
+          "name": "test2",
+          "level": 1,
+          "subcategories": []
+        }
+      ]
+    }
+  ]
+}

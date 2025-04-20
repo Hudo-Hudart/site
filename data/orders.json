@@ -1,0 +1,20 @@
+[
+    {
+      "customer": {
+        "name": "Иван Иванов",
+        "phone": "+79181234567",
+        "delivery_cost": 100,
+        "has_discount": true
+      },
+      "items": [
+        {
+          "id": 1,
+          "name": "Корм для кошек",
+          "price": 500,
+          "quantity": 2
+        }
+      ],
+      "total": "950.00",
+      "timestamp": "2023-10-05T12:34:56Z"
+    }
+  ]
