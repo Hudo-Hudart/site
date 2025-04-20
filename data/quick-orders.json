@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "items": [
+      {
+        "id": 3,
+        "name": "Whiskas пауч для кошек",
+        "category_id": 13,
+        "price": 45,
+        "rating": 4.5,
+        "image": "korm_3.jpg",
+        "weights": [
+          0.085
+        ],
+        "quantity": 1,
+        "weight": 0.085,
+        "addedAt": "2025-04-18T02:03:33.306Z"
+      }
+    ],
+    "customer": {
+      "name": "qdww",
+      "phone": "+79133280166",
+      "street": "Гороховая ул",
+      "house": "23",
+      "comment": "Антикафе Игральня"
+    },
+    "timestamp": "2025-04-20T20:52:24.509Z"
+  }
+]

@@ -157,6 +157,7 @@ class CartPage {
         
         console.log('Оформление заказа:', this.items);
         // Дополнительная логика оформления заказа...
+        window.location.href = '/new-order.html';
     }
 
     handleQuickOrder() {

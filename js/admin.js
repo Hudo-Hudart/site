@@ -409,7 +409,6 @@ const handleStatusChange = async (e) => {
 
     const renderReviews = () => {
         // В функции renderReviews()
-    time.innerHTML = new Date(review.created_at.replace(' ', 'T')).toLocaleDateString();
         // Шаблонизатор для карточек
         const createReviewCard = (review, isPending) => `
             <div class="review-card" data-id="${review.id}">
@@ -439,18 +438,17 @@ const handleStatusChange = async (e) => {
         DOM.reviewCounters.pending.textContent = state.pendingReviews.length;
         DOM.reviewCounters.approved.textContent = state.approvedReviews.length;
     };
-
     // Инициализация
     const init = async () => {
         await loadInitialData();
         await loadOrders(); // Добавляем загрузку заказов
         setupOrderListeners(); // Добавляем новые обработчики
+        setupEventListeners();
         renderAll();
         renderOrdersSection('full');
         renderOrdersSection('quick');
         updateCategorySelects();
     };
-
     // Загрузка данных
     const loadInitialData = async () => {
         try {
@@ -471,7 +469,6 @@ const handleStatusChange = async (e) => {
             alert('Не удалось загрузить данные');
         }
     };
-
     // Преобразование продуктов
     const transformProducts = (rows) => {
         return rows.map(row => ({
@@ -487,7 +484,6 @@ const handleStatusChange = async (e) => {
             weights: row[9] || []
         }));
     };
-
     // Построение дерева категорий
     const buildCategoryTree = (categories, parentId = null) => {
         return categories
@@ -497,7 +493,6 @@ const handleStatusChange = async (e) => {
                 subcategories: buildCategoryTree(categories, category.id)
             }));
     };
-
     // Преобразование в плоский список с уровнями
     const flattenCategories = (categories, level = 0, parentId = null) => {
         return categories.reduce((acc, category) => {
@@ -517,62 +512,50 @@ const handleStatusChange = async (e) => {
             return acc;
         }, []);
     };
-
     // Обновление селектов категорий
     const updateCategorySelects = () => {
         const options = state.flatCategories.map(category => 
             `<option value="${category.id}">${'&nbsp;&nbsp;'.repeat(category.level)}${category.name}</option>`
         ).join('');
-        
         DOM.categoryParentSelect.innerHTML = 
             `<option value="">Основная категория</option>${options}`;
-        
         DOM.productCategorySelect.innerHTML = options;
     };
-
     // Добавление категории
     const handleCategorySubmit = async (e) => {
         e.preventDefault();
-        
         // Проверка прав администратора
         if (!checkAdminAccess()) {
             alert('Доступ запрещен! Недостаточно прав для выполнения операции');
             window.location.href = '/index.html';
             return;
         }
-    
         // Получение данных формы
         const form = e.target;
         const formData = new FormData(form);
         const categoryName = formData.get('name').trim();
         const parentCategoryId = formData.get('parent');
-    
         // Валидация данных
         if (!categoryName) {
             alert('Пожалуйста, введите название категории');
             form.name.focus();
             return;
         }
-    
         try {
             // Загрузка текущих категорий
             const categoriesResponse = await fetch(CONFIG.CATEGORIES_DATA_URL);
             if (!categoriesResponse.ok) throw new Error('Ошибка загрузки категорий');
             const categories = await categoriesResponse.json();
-    
             // Проверка на дубликаты
             const isDuplicate = categories.some(c => 
                 c.name.toLowerCase() === categoryName.toLowerCase() && 
                 c.parent_id === (parentCategoryId || null)
             );
-            
             if (isDuplicate) {
                 throw new Error('Категория с таким названием уже существует в выбранном разделе');
             }
-    
             // Генерация ID для новой категории
             const newCategoryId = Date.now();
-    
             // Определение уровня вложенности
             let categoryLevel = 0;
             if (parentCategoryId) {
@@ -580,7 +563,6 @@ const handleStatusChange = async (e) => {
                 if (!parentCategory) throw new Error('Родительская категория не найдена');
                 categoryLevel = parentCategory.level + 1;
             }
-    
             // Создание объекта категории
             const newCategory = {
                 id: newCategoryId,
@@ -591,39 +573,30 @@ const handleStatusChange = async (e) => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
-    
             // Создание обновленного списка категорий
             const updatedCategories = [...categories, newCategory];
-    
             // Сохранение через общую функцию
             const saveResult = await saveData('categories.json', {
                 type: "hierarchical",
                 categories: updatedCategories
             });
-    
             if (!saveResult || !saveResult.success) {
                 throw new Error(saveResult?.error || 'Ошибка сохранения данных');
             }
-    
             // Обновление состояния приложения
             state.flatCategories = flattenCategories(updatedCategories);
             state.categories = buildCategoryTree(state.flatCategories);
-    
             // Обновление интерфейса
             updateCategorySelects();
             renderCategories();
-            
             // Сброс формы и фокус
             form.reset();
             form.name.focus();
-            
             // Уведомление об успехе
             showSuccessMessage('Категория успешно добавлена!');
-    
         } catch (error) {
             console.error('Ошибка при добавлении категории:', error);
             showError(`Ошибка: ${error.message}`);
-            
             // Восстановление предыдущих данных
             try {
                 await loadInitialData();
@@ -634,8 +607,6 @@ const handleStatusChange = async (e) => {
             }
         }
     };
-
-
     // Рендер категорий
     const renderCategories = () => {
         const renderCategory = (category, level = 0) => `
@@ -649,31 +620,22 @@ const handleStatusChange = async (e) => {
                 ).join('') || ''}
             </div>
         `;
-
         DOM.categoryList.innerHTML = state.categories.map(category => 
             renderCategory(category)
         ).join('');
     };
-
     const handleDelete = async (e) => {
-
         if (!checkAdminAccess()) {
             alert('Доступ запрещен!');
             window.location.reload();
             return;
           }
-
         if (!e.target.classList.contains('delete-button')) return;
-    
         // Удаление категории
         const categoryItem = e.target.closest('.category-item');
-
-          
-
         if (categoryItem) {
             const categoryId = parseInt(categoryItem.dataset.id);
             if (!confirm('Удалить категорию и все подкатегории?')) return;
-    
             const idsToRemove = getCategoryChildrenIds(categoryId);
             state.flatCategories = state.flatCategories.filter(c => 
                 !idsToRemove.includes(c.id)
@@ -682,7 +644,6 @@ const handleStatusChange = async (e) => {
             state.products = state.products.filter(p => 
                 !idsToRemove.includes(p.categoryId)
             );
-            
             // Сохраняем изменения
             await Promise.all([
                 saveData('categories.json', { 
@@ -702,20 +663,16 @@ const handleStatusChange = async (e) => {
                     ])
                 })
             ]);
-            
             renderAll();
             updateCategorySelects();
             return; // Важно: прерываем выполнение после удаления категории
         }
-    
         // Удаление товара
         const productRow = e.target.closest('.product-item');
         if (productRow) {
             const productId = parseInt(productRow.dataset.id);
             if (!confirm('Удалить товар?')) return;
-            
             state.products = state.products.filter(p => p.id !== productId);
-            
             // Сохраняем изменения
             await saveData('products.json', {
                 type: "query results",
@@ -729,11 +686,9 @@ const handleStatusChange = async (e) => {
                     p.image.split('/').pop()
                 ])
             });
-            
             renderProducts();
         }
     };
-
     // Получение ID всех потомков
     const getCategoryChildrenIds = (parentId) => {
         const children = state.flatCategories.filter(c => c.parent_id === parentId);
@@ -743,8 +698,6 @@ const handleStatusChange = async (e) => {
             return acc;
         }, [parentId]);
     };
-
-
     const saveData = async (filename, data) => {
         try {
             const response = await fetch(CONFIG.SAVE_DATA_URL, {
@@ -752,11 +705,9 @@ const handleStatusChange = async (e) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename, data })
             });
-            
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
-            
             return await response.json();
         } catch (error) {
             console.error('Save error:', error);
@@ -764,7 +715,6 @@ const handleStatusChange = async (e) => {
             throw error;
         }
     };
-    
       const showError = (message) => {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-message';
@@ -772,21 +722,17 @@ const handleStatusChange = async (e) => {
         document.body.appendChild(errorDiv);
         setTimeout(() => errorDiv.remove(), 3000);
       };
-
         // Добавление товара
         const handleProductSubmit = async (e) => {
             e.preventDefault();
-            
             // Проверка прав администратора
             if (!checkAdminAccess()) {
                 alert('Доступ запрещен! Недостаточно прав для выполнения операции');
                 window.location.href = '/index.html';
                 return;
             }
-        
             const form = e.target;
             const formData = new FormData(form);
-            
             try {
                 // Валидация основных полей
                 const requiredFields = {
@@ -795,48 +741,40 @@ const handleStatusChange = async (e) => {
                     category: formData.get('category'),
                     image: formData.get('image')
                 };
-        
                 // Проверка заполнения обязательных полей
                 if (!requiredFields.name) {
                     alert('Введите название товара');
                     form.name.focus();
                     return;
                 }
-        
                 if (!requiredFields.price || isNaN(requiredFields.price)) {
                     alert('Укажите корректную цену');
                     form.price.focus();
                     return;
                 }
-        
                 if (!requiredFields.category || isNaN(requiredFields.category)) {
                     alert('Выберите категорию');
                     form.category.focus();
                     return;
                 }
-        
                 if (!requiredFields.image || requiredFields.image.size === 0) {
                     alert('Загрузите изображение товара');
                     form.image.focus();
                     return;
                 }
-        
                 // Проверка существования категории
                 const categoryExists = state.flatCategories.some(
                     c => c.id === parseInt(requiredFields.category)
                 );
-                
                 if (!categoryExists) {
                     alert('Выбранная категория не существует');
                     return;
                 }
-        
                 // Загрузка изображения
                 const uploadResult = await uploadImage(requiredFields.image);
                 if (!uploadResult?.success || !uploadResult.path) {
                     throw new Error('Ошибка загрузки изображения');
                 }
-        
                 // Обработка характеристик
                 let specifications = {};
                 const specsInput = formData.get('specifications').trim();
@@ -849,20 +787,17 @@ const handleStatusChange = async (e) => {
                         return;
                     }
                 }
-        
                 // Обработка весов
                 const weights = formData.get('weights')
                     .split(',')
                     .map(w => parseFloat(w.trim()))
                     .filter(w => !isNaN(w) && w > 0);
-
                     // В handleProductSubmit
                 const price = Number(formData.get('price'));
                 if (Number.isNaN(price) || price <= 0) {
                     showError('Некорректная цена');
                     return;
                 }
-        
                 // Создание объекта товара
                 const newProduct = {
                     id: Date.now(),
@@ -878,21 +813,17 @@ const handleStatusChange = async (e) => {
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 };
-        
                 // Проверка на дубликаты
                 const isDuplicate = state.products.some(p => 
                     p.sku && p.sku === newProduct.sku || 
                     p.name.toLowerCase() === newProduct.name.toLowerCase()
                 );
-        
                 if (isDuplicate) {
                     alert('Товар с таким названием или артикулом уже существует');
                     return;
                 }
-        
                 // Обновление состояния
                 const updatedProducts = [...state.products, newProduct];
-        
                 // Сохранение данных
                 const saveResult = await saveData('products.json', {
                     type: "query results",
@@ -910,25 +841,19 @@ const handleStatusChange = async (e) => {
                         p.weights
                     ])
                 });
-        
                 if (!saveResult || !saveResult.success) {
                     throw new Error(saveResult?.error || 'Ошибка сохранения товара');
                 }
-        
                 // Обновление глобального состояния
                 state.products = updatedProducts;
-        
                 // Обновление интерфейса
                 renderProducts();
-                
                 // Сброс формы и уведомление
                 form.reset();
                 showSuccessMessage('Товар успешно добавлен!');
-        
             } catch (error) {
                 console.error('Ошибка при добавлении товара:', error);
                 showError(`Ошибка: ${error.message}`);
-                
                 // Восстановление предыдущих данных
                 try {
                     await loadInitialData();
@@ -939,10 +864,6 @@ const handleStatusChange = async (e) => {
                 }
             }
         };
-
-
-
-
 ///////////////////////////////////////////////
     // Поиск товаров
     const handleSearch = (e) => {
@@ -952,7 +873,6 @@ const handleStatusChange = async (e) => {
         );
         renderProducts(filtered);
     };
-
     // Рендер товаров
     const renderProducts = (products = state.products) => {
     // В функции renderProducts()
@@ -963,7 +883,6 @@ const handleStatusChange = async (e) => {
     const category = state.flatCategories.find(c => c.id === product.categoryId);
     const specsKeys = Object.keys(product.specifications);
     const specsValues = Object.values(product.specifications);
-
     // Построим <table> для specs
     const specsTable = specsKeys.length
       ? `
@@ -999,22 +918,18 @@ const handleStatusChange = async (e) => {
       </tr>
     `;
 }).join('');
-
 };
-
     // ДОБАВИТЬ ПЕРЕД ФУНКЦИЕЙ setupEventListeners
     const handleReviewAction = async (action, reviewId) => {
         if (!checkAdminAccess()) {
             showError('Доступ запрещен!');
             return;
         }
-    
         // Создаем копии для безопасного изменения
         let pending = [...state.pendingReviews];
         let approved = [...state.approvedReviews];
         let originalPending = [...state.pendingReviews];
         let originalApproved = [...state.approvedReviews];
-    
         try {
             // Находим отзыв без мутации исходных данных
             const reviewIndex = pending.findIndex(r => r.id === reviewId);
@@ -1022,33 +937,27 @@ const handleStatusChange = async (e) => {
             const review = isPending 
                 ? pending[reviewIndex] 
                 : approved.find(r => r.id === reviewId);
-    
             if (!review) {
                 throw new Error('Отзыв не найден');
             }
-    
             // Подтверждение для деструктивных действий
             if (action === 'delete' && !confirm('Удалить отзыв безвозвратно?')) {
                 return;
             }
-    
             // Обработка действий
             switch(action) {
                 case 'approve':
                     if (!isPending) {
                         throw new Error('Отзыв уже одобрен');
                     }
-                    
                     // Создаем новый объект вместо мутации
                     const approvedReview = {
                         ...review,
                         approved_at: new Date().toISOString()
                     };
-                    
                     pending = pending.filter(r => r.id !== reviewId);
                     approved = [...approved, approvedReview];
                     break;
-    
                 case 'delete':
                     if (isPending) {
                         pending = pending.filter(r => r.id !== reviewId);
@@ -1056,56 +965,43 @@ const handleStatusChange = async (e) => {
                         approved = approved.filter(r => r.id !== reviewId);
                     }
                     break;
-    
                 default:
                     throw new Error(`Неизвестное действие: ${action}`);
             }
-    
             // Атомарное обновление состояния
             state.pendingReviews = pending;
             state.approvedReviews = approved;
-    
             // Пакетное сохранение через отдельные запросы
             const saveRequests = [
                 saveData('pending-reviews.json', pending),
                 saveData('approved-reviews.json', approved)
             ];
-    
             const results = await Promise.all(saveRequests);
-            
             // Проверка результатов сохранения
             if (results.some(res => !res?.success)) {
                 throw new Error('Ошибка синхронизации данных');
             }
-    
             // Обновление UI только после успешного сохранения
             renderReviews();
-    
         } catch (error) {
             console.error('Ошибка действия:', error);
-            
             // Восстановление исходного состояния при ошибках
             state.pendingReviews = originalPending;
             state.approvedReviews = originalApproved;
             renderReviews();
-    
             showError(`${error.message} (изменения отменены)`);
         }
     };
-
   const setupReviewEventListeners = () => {
     DOM.reviewsSection.addEventListener('click', async (e) => {
       const button = e.target.closest('[data-action]');
       if (!button) return;
-      
       const card = button.closest('.review-card');
       const reviewId = parseInt(card.dataset.id);
       const action = button.dataset.action;
-  
       await handleReviewAction(action, reviewId);
     });
   };
-
     // Настройка обработчиков
     const setupEventListeners = () => {
         DOM.tabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
@@ -1117,7 +1013,6 @@ const handleStatusChange = async (e) => {
         if (reviewForm) {
             reviewForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                
                 const formData = new FormData(e.target);
                 const reviewData = {
                     author: formData.get('name'),
@@ -1126,7 +1021,6 @@ const handleStatusChange = async (e) => {
                     rating: parseInt(formData.get('rating')),
                     content: formData.get('content')
                 };
-
                 if (await saveReview(reviewData)) {
                     alert('Отзыв успешно отправлен на модерацию!');
                     e.target.reset();
@@ -1137,25 +1031,20 @@ const handleStatusChange = async (e) => {
         }
         setupReviewEventListeners(); // Обработчики для админ-панели отзывов
     };
-
     // Переключение вкладок
     // ЗАМЕНИТЬ существующую функцию на эту:
 const handleTabSwitch = (e) => {
     const tab = e.target;
     if (!tab || !tab.dataset.tab) return;
-  
     // Снять активное состояние со всех вкладок
     DOM.tabs.forEach(t => t.classList.remove('active'));
-    
     // Скрыть все секции
     document.querySelectorAll('.admin-section').forEach(section => {
       section.classList.remove('active');
     });
-  
     // Активировать выбранную вкладку
     tab.classList.add('active');
     state.currentTab = tab.dataset.tab;
-  
     // Показать соответствующую секцию
     const activeSection = document.getElementById(`${state.currentTab}-section`);
     if (activeSection) {
@@ -1172,14 +1061,16 @@ const handleTabSwitch = (e) => {
       }
     }
   };
-
-
-    
-
     // Общий рендер
-    const renderAll = () => {
+    const renderAll = async () => {
         renderCategories();
         renderProducts();
+        await loadReviews();      // загружаем массив pending и approved
+        renderReviews();          // рендерим оба раздела
+    
+        // --- заказы ---
+        renderOrdersSection('full');   // отображаем "полные" заказы
+        renderOrdersSection('quick');  // отображаем "быстрые" заказы
     };
 
     init();

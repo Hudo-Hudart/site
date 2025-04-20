@@ -34,7 +34,11 @@ Object.values(STATIC_DIRS).forEach(dir => {
 });
 
 // Middleware
-
+app.use(cors({
+  origin: 'http://localhost:3000',
+  methods: ['POST', 'GET'],
+  allowedHeaders: ['Content-Type']
+}));
 app.use(express.json());
 
 // Настройка статических файлов
@@ -97,7 +101,23 @@ app.get('/api/reviews/:type', (req, res) => {
       res.status(500).json({ error: 'Error reading reviews' });
   }
 });
- 
+  // Добавить в секцию API Endpoints
+  app.get('/api/reviews/:type', (req, res) => {
+    try {
+      const {type} = req.params;
+      if (!['approved','pending'].includes(type)) {
+        return res.status(400).json({error: 'Invalid review type'});
+      }
+      const filePath = path.join(DATA_DIR, `${type}-reviews.json`);
+      if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, '[]');
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      res.json(data);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({error: 'Error reading reviews'});
+    }
+  });  // <-- не забыли закрыть этот колбэк!
+  
   // Создание заказа (full)
   app.post('/api/orders', (req, res) => {
     try {
@@ -132,6 +152,7 @@ app.get('/api/reviews/:type', (req, res) => {
   
   // Получение всех заказов
   app.get('/api/orders', (req, res) => {
+    
     try {
       const file = path.join(DATA_DIR, 'orders.json');
       const orders = fs.existsSync(file)
@@ -227,7 +248,9 @@ app.post('/api/save-review', (req, res) => {
       }
 
       // Генерация ID
-      const lastId = reviews.length > 0 ? Math.max(...reviews.map(r => r.id)) : 0;
+      const lastId = reviews.length > 0 
+          ? Math.max(...reviews.map(r => r.id)) 
+          : 0;
       const newId = lastId + 1;
 
       const newReview = {

@@ -16,15 +16,5 @@
     "rating": 2,
     "content": "Не понравилось обслуживание, долго ждал заказ",
     "created_at": "2024-03-16 16:10:00"
-  },
-  {
-    "id": 6,
-    "name": "sfaff",
-    "email": "asfsfafss@mail.ru",
-    "phone": null,
-    "rating": 5,
-    "content": "afasff",
-    "created_at": "2025-04-18T19:20:27.430Z",
-    "status": "pending"
   }
 ]
