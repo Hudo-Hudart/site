@@ -125,25 +125,34 @@ class CheckoutPage {
 
     // Подготовка данных заказа
     prepareOrderData(formData) {
-        const location = this.findLocation(...formData.get('location').split(', '));
-    const discount = document.getElementById('discount-checkbox').checked;
-    
-    return {
-        customer: {
+        const locationStr = formData.get('location') || '';
+        const [city, district] = locationStr.includes(', ')
+          ? locationStr.split(', ')
+          : [null, null];
+      
+        const location = city && district
+          ? this.findLocation(city, district)
+          : null;
+      
+        const discount = document.getElementById('discount-checkbox').checked;
+      
+        return {
+          customer: {
             ...Object.fromEntries(formData.entries()),
             delivery_cost: location?.delivery_cost || 0,
             has_discount: discount
-        },
-        items: this.cartItems.map(item => ({
+          },
+          items: this.cartItems.map(item => ({
             id: item.id,
             name: item.name,
             price: item.price,
             quantity: item.quantity
-        })),
-        total: this.calculateTotal(location?.delivery_cost),
-        timestamp: new Date().toISOString()
-    };
-}
+          })),
+          total: this.calculateTotal(location?.delivery_cost),
+          timestamp: new Date().toISOString()
+        };
+      }
+      
 
     // Расчет итоговой суммы
     calculateTotal(deliveryCost = 0) {

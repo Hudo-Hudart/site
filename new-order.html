@@ -230,11 +230,13 @@
                         <!-- Динамический список городов/районов -->
                         <div class="form-group">
                             <label>Населённый пункт и район:</label>
-                            <input type="text" 
-                                   id="location-input" 
-                                   placeholder="Начните вводить город"
-                                   required
-                                   list="locations-list">
+                            <input 
+                                type="text"
+                                id="location-input"
+                                name="location"            
+                                placeholder="Начните вводить город"
+                                required
+                                list="locations-list">
                             <datalist id="locations-list">
                                 <!-- Динамически заполняется из JSON -->
                             </datalist>

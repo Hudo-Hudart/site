@@ -143,38 +143,58 @@ document.addEventListener('DOMContentLoaded', () => {
             
                 const data = await response.json();
                 console.log('Received data for', type, ':', data);
+
+                // === Нормализация для обоих типов ===
+    data.forEach((order, index) => {
+        if (!order.id) order.id = `${type}-${Date.now()}-${index}`;
+        if (!order.status) order.status = 'new';
+        if (typeof order.total === 'string') {
+            order.total = parseFloat(order.total.replace(',', '.'));
+        }
+    
+          // 3) для быстрых: вычисляем total из items, если его нет
+          if (type === 'быстрых заказов') {
+            // Нормализация структуры клиента
+            order.customer = order.customer || {};
+            order.customer.name = order.customer.name || 'Не указано';
+            order.customer.phone = order.customer.phone || 'Без телефона';
+            
+            // Вычисление total если отсутствует
+            if (!order.total) {
+                order.total = order.items.reduce((sum, item) => {
+                    return sum + (Number(item.price) || 0) * (item.quantity || 1);
+                }, 0);
+            }
+        } else { // Для обычных заказов
+            // Нормализация имени
+            if (order.customer?.name && !order.customer.first_name) {
+                const [first, ...rest] = order.customer.name.split(' ');
+                order.customer.first_name = first;
+                order.customer.last_name = rest.join(' ') || '';
+            }
+        }
+    });
             
                 // Разные критерии валидации для разных типов заказов
                 const isValid = data.every(item => {
                     // Общие обязательные поля для всех заказов
                     const baseCheck = item.id && item.customer && item.total !== undefined;
-                    
-                    // Специфичные проверки для разных типов
                     if (type === 'обычных заказов') {
-                        return baseCheck && 
-                               item.customer.first_name && 
-                               item.customer.last_name && 
-                               typeof item.total === 'number';
+                    return baseCheck &&
+                            item.customer.first_name &&
+                            item.customer.last_name &&
+                            typeof item.total === 'number';
                     }
-                    
                     if (type === 'быстрых заказов') {
-                        return baseCheck && 
-                               item.customer.name && 
-                               item.customer.phone && 
-                               (typeof item.total === 'number' || !isNaN(item.total));
+                    return baseCheck &&
+                            item.customer.name &&
+                            item.customer.phone &&
+                            (typeof item.total === 'number' || !isNaN(item.total));
                     }
                     
                     return false;
                 });
             
-                // Автоматическое исправление формата total
-                if (type === 'быстрых заказов') {
-                    data.forEach(order => {
-                        if (typeof order.total === 'string') {
-                            order.total = parseFloat(order.total);
-                        }
-                    });
-                }
             
                 if (!isValid) {
                     throw new Error(`Неверный формат данных для ${type}`);
@@ -214,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderOrdersSection('full');
             }
             if (document.getElementById('quick-orders-section')) {
-                renderOrdersSection('quick');
+                renderOrdersSection('quick-orders');
             }
         }
     };
@@ -238,7 +258,7 @@ const renderStatusControls = (order, type) => {
 
     const renderOrdersSection = (type) => {
         const orders = type === 'full' ? state.orders : state.quickOrders;
-        const sectionId = `${type}-orders-section`;
+        const sectionId = `${type}-section`;
         const container = document.getElementById(sectionId);
         if (!container) return;
       
@@ -325,9 +345,24 @@ const handleStatusChange = async (e) => {
             `;
         }
         return `
-            <p>Комментарий: ${order.customer.comment || '—'}</p>
-        `;
-    };
+        <div class="order-details">
+            <div class="order-items">
+                ${order.items.map(item => `
+                    <div class="order-item">
+                        <span>${item.name}</span>
+                        <span>${item.quantity} × ${item.price.toFixed(2)} ₽</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="order-meta">
+                <p>Адрес: ${order.customer.street} ${order.customer.house}</p>
+                ${order.customer.comment ? 
+                    `<p>Комментарий: ${order.customer.comment}</p>` : ''}
+                <p>Итого: ${order.total.toFixed(2)} ₽</p>
+            </div>
+        </div>
+    `;
+};
     
     const setupOrderListeners = () => {
         document.addEventListener('click', async (e) => {
@@ -446,7 +481,7 @@ const handleStatusChange = async (e) => {
         setupEventListeners();
         renderAll();
         renderOrdersSection('full');
-        renderOrdersSection('quick');
+        renderOrdersSection('quick-orders');
         updateCategorySelects();
     };
     // Загрузка данных
@@ -1051,14 +1086,17 @@ const handleTabSwitch = (e) => {
       activeSection.classList.add('active');
   
       // Если это вкладка отзывов - обновить данные
-      if (state.currentTab === 'reviews') {
-        loadReviews()
-          .then(renderReviews)
-          .catch(error => {
-            console.error('Ошибка загрузки отзывов:', error);
-            alert('Не удалось загрузить отзывы');
-          });
-      }
+      switch(state.currentTab) {
+        case 'full':
+        case 'quick-orders':
+            loadOrders()
+                .then(() => renderOrdersSection(state.currentTab))
+                .catch(console.error);
+            break;
+        case 'reviews':
+            loadReviews().catch(console.error);
+            break;
+    }
     }
   };
     // Общий рендер

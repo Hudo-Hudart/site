@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "id": 1745183534209,
+    "status": "new",
+    "customer": {
+      "location": "Сочи, Точки самовывоза",
+      "phone": "+79133280166",
+      "first_name": "asfasf",
+      "last_name": "afs",
+      "email": "agddga@gmail.com",
+      "password": "",
+      "password_confirm": "",
+      "payment": "pickup",
+      "delivery_cost": 0,
+      "has_discount": false
+    },
+    "items": [
+      {
+        "id": 3,
+        "name": "Whiskas пауч для кошек",
+        "price": 45,
+        "quantity": 1
+      }
+    ],
+    "total": "45.00",
+    "timestamp": "2025-04-20T21:12:14.179Z"
+  }
+]
