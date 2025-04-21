@@ -88,21 +88,6 @@
         }
       ],
       "level": 0
-    },
-    {
-      "id": 1744518483179,
-      "parent_id": null,
-      "name": "test1",
-      "level": 0,
-      "subcategories": [
-        {
-          "id": 1745011918417,
-          "parent_id": 1744518483179,
-          "name": "test2",
-          "level": 1,
-          "subcategories": []
-        }
-      ]
     }
   ]
 }

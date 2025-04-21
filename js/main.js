@@ -73,7 +73,7 @@ class Collection {
             ${this.items.map(item => this.getItemTemplate(item)).join('')}
             <div class="cart-actions">
                 <a href="/cart.html" class="open-cart">Открыть корзину</a>
-                <button class="checkout">Оформить заказ</button>
+                <a href="/new-order.html" class="open-cart">Оформить заказ</a>
             </div>
         `;
     }
@@ -509,11 +509,12 @@ class TestimonialCarousel {
     createSlide(review) {
         return `
             <div class="carousel-slide">
-                <img src="${review.avatar || '/images/avatar.png'}" 
-                     alt="${review.author}" 
-                     class="testimonial-avatar"
-                     onerror="this.src='/images/avatar.png'">
-                <h3 class="testimonial-name">${review.author}</h3>
+            <img src="${review.avatar || `/images/reviews/review_${review.id}.jpg`}" 
+                 alt="Фото ${review.author}" 
+                 class="testimonial-avatar"
+                 width="100"
+                 height="100"
+                 onerror="this.src='/images/reviews/placeholder.png'; this.alt='Фото недоступно'">
                 <ul class="testimonial-list">
                     ${review.content.split('\n')
                         .map(line => line.trim())
@@ -703,7 +704,7 @@ class ReviewForm {
         if (!this.validateForm()) return;
       
         const formData = {
-          name: this.form.name.value.trim(),
+          author: this.form.name.value.trim(),
           email: this.form.email.value.trim(),
           phone: this.form.phone.value.trim() || null,
           rating: parseInt(this.ratingInput.value),

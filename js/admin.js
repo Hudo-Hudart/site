@@ -559,90 +559,91 @@ const handleStatusChange = async (e) => {
     // Добавление категории
     const handleCategorySubmit = async (e) => {
         e.preventDefault();
-        // Проверка прав администратора
         if (!checkAdminAccess()) {
             alert('Доступ запрещен! Недостаточно прав для выполнения операции');
             window.location.href = '/index.html';
             return;
         }
-        // Получение данных формы
+    
         const form = e.target;
         const formData = new FormData(form);
         const categoryName = formData.get('name').trim();
-        const parentCategoryId = formData.get('parent');
-        // Валидация данных
+        const parentRaw = formData.get('parent');
+        const parentCategoryId = parentRaw ? parseInt(parentRaw, 10) : null;
+    
         if (!categoryName) {
             alert('Пожалуйста, введите название категории');
             form.name.focus();
             return;
         }
+    
         try {
             // Загрузка текущих категорий
-            const categoriesResponse = await fetch(CONFIG.CATEGORIES_DATA_URL);
-            if (!categoriesResponse.ok) throw new Error('Ошибка загрузки категорий');
-            const categories = await categoriesResponse.json();
-            // Проверка на дубликаты
-            const isDuplicate = categories.some(c => 
-                c.name.toLowerCase() === categoryName.toLowerCase() && 
-                c.parent_id === (parentCategoryId || null)
+            const resp = await fetch(CONFIG.CATEGORIES_DATA_URL);
+            if (!resp.ok) throw new Error('Ошибка загрузки категорий');
+            const data = await resp.json();
+    
+            // Преобразование в плоский список
+            const currentFlatCategories = flattenCategories(data.categories || []);
+    
+            // Проверка на дубликат
+            const isDuplicate = currentFlatCategories.some(c =>
+                c.name.toLowerCase() === categoryName.toLowerCase() &&
+                c.parent_id === parentCategoryId
             );
-            if (isDuplicate) {
-                throw new Error('Категория с таким названием уже существует в выбранном разделе');
+            if (isDuplicate) throw new Error('Категория уже существует в этом разделе');
+    
+            // Определение уровня
+            let level = 0;
+            if (parentCategoryId !== null) {
+                const parent = currentFlatCategories.find(c => c.id === parentCategoryId);
+                if (!parent) throw new Error('Родительская категория не найдена');
+                level = parent.level + 1;
             }
-            // Генерация ID для новой категории
-            const newCategoryId = Date.now();
-            // Определение уровня вложенности
-            let categoryLevel = 0;
-            if (parentCategoryId) {
-                const parentCategory = categories.find(c => c.id == parentCategoryId);
-                if (!parentCategory) throw new Error('Родительская категория не найдена');
-                categoryLevel = parentCategory.level + 1;
-            }
-            // Создание объекта категории
+    
+            // Создание новой категории
             const newCategory = {
-                id: newCategoryId,
+                id: Date.now(),
                 name: categoryName,
-                parent_id: parentCategoryId ? parseInt(parentCategoryId) : null,
-                level: categoryLevel,
-                subcategories: [],
+                parent_id: parentCategoryId,
+                level,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
-            // Создание обновленного списка категорий
-            const updatedCategories = [...categories, newCategory];
-            // Сохранение через общую функцию
-            const saveResult = await saveData('categories.json', {
+    
+            // Обновление плоского списка
+            const updatedFlat = [...currentFlatCategories, newCategory];
+    
+            // Построение иерархии
+            const nestedCategories = buildCategoryTree(updatedFlat);
+    
+            // Сохранение
+            await saveData('categories.json', {
                 type: "hierarchical",
-                categories: updatedCategories
+                categories: nestedCategories
             });
-            if (!saveResult || !saveResult.success) {
-                throw new Error(saveResult?.error || 'Ошибка сохранения данных');
-            }
-            // Обновление состояния приложения
-            state.flatCategories = flattenCategories(updatedCategories);
-            state.categories = buildCategoryTree(state.flatCategories);
-            // Обновление интерфейса
+    
+            // Обновление состояния
+            state.flatCategories = updatedFlat;
+            state.categories = nestedCategories;
             updateCategorySelects();
             renderCategories();
-            // Сброс формы и фокус
             form.reset();
-            form.name.focus();
-            // Уведомление об успехе
             showSuccessMessage('Категория успешно добавлена!');
+    
         } catch (error) {
-            console.error('Ошибка при добавлении категории:', error);
-            showError(`Ошибка: ${error.message}`);
-            // Восстановление предыдущих данных
+            console.error('Ошибка:', error);
+            showError(error.message);
             try {
                 await loadInitialData();
                 renderCategories();
             } catch (reloadError) {
-                console.error('Ошибка восстановления данных:', reloadError);
+                console.error('Ошибка восстановления:', reloadError);
                 showError('Критическая ошибка! Перезагрузите страницу');
             }
         }
-    };
-    // Рендер категорий
+    }; 
+             // Рендер категорий
     const renderCategories = () => {
         const renderCategory = (category, level = 0) => `
             <div class="category-item" data-id="${category.id}">
@@ -757,6 +758,15 @@ const handleStatusChange = async (e) => {
         document.body.appendChild(errorDiv);
         setTimeout(() => errorDiv.remove(), 3000);
       };
+
+        const showSuccessMessage = (message) => {
+        const successDiv = document.createElement('div');
+        successDiv.className = 'success-message';
+        successDiv.textContent = message;
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+        };
+
         // Добавление товара
         const handleProductSubmit = async (e) => {
             e.preventDefault();

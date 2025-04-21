@@ -24,5 +24,31 @@
     ],
     "total": "45.00",
     "timestamp": "2025-04-20T21:12:14.179Z"
+  },
+  {
+    "id": 1745197259834,
+    "status": "new",
+    "customer": {
+      "location": "Сочи, Адлерский (от Кудепсты до Адлера-Центр)",
+      "phone": "+79133280166",
+      "first_name": "asfasf",
+      "last_name": "afs",
+      "email": "agddga@gmail.com",
+      "password": "",
+      "password_confirm": "",
+      "payment": "pickup",
+      "delivery_cost": 300,
+      "has_discount": false
+    },
+    "items": [
+      {
+        "id": 3,
+        "name": "Whiskas пауч для кошек",
+        "price": 45,
+        "quantity": 1
+      }
+    ],
+    "total": "345.00",
+    "timestamp": "2025-04-21T01:00:59.794Z"
   }
 ]
