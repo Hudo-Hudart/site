@@ -24,5 +24,62 @@
       "comment": "Антикафе Игральня"
     },
     "timestamp": "2025-04-20T20:52:24.509Z"
+  },
+  {
+    "items": [
+      {
+        "id": 4,
+        "name": "Деревенские лакомства из курицы",
+        "category_id": 10,
+        "price": 350,
+        "rating": 4.7,
+        "image": "korm_4.jpg",
+        "weights": [
+          0.2,
+          0.5
+        ],
+        "quantity": 1,
+        "weight": 0.2,
+        "addedAt": "2025-04-21T01:01:42.633Z"
+      },
+      {
+        "id": 2,
+        "name": "Royal Canin для взрослых кошек",
+        "category_id": 12,
+        "price": 1500,
+        "rating": 4.8,
+        "image": "korm_2.jpg",
+        "weights": [
+          0.4,
+          2,
+          4
+        ],
+        "quantity": 6,
+        "weight": 0.4,
+        "addedAt": "2025-04-21T17:56:08.508Z"
+      },
+      {
+        "id": 3,
+        "name": "Whiskas пауч для кошек",
+        "category_id": 13,
+        "price": 45,
+        "rating": 4.5,
+        "image": "korm_3.jpg",
+        "weights": [
+          0.085
+        ],
+        "quantity": 2,
+        "weight": 0.085,
+        "addedAt": "2025-04-21T17:56:10.744Z"
+      }
+    ],
+    "customer": {
+      "name": "asfasf afs",
+      "phone": "+79133280166",
+      "street": "Гороховая ул",
+      "house": "23",
+      "comment": "Антикафе Игральня"
+    },
+    "timestamp": "2025-04-21T17:59:46.101Z"
   }
 ]

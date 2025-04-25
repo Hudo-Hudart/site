@@ -25,5 +25,16 @@
     "rating": 5,
     "content": "Лучший зоомагазин в городе! Рекомендую всем!",
     "created_at": "2024-03-15 11:20:00"
+  },
+  {
+    "id": 6,
+    "author": "AGADSGD",
+    "email": "ghostrik20@gmail.com",
+    "phone": "+79133280166",
+    "rating": 4,
+    "content": "PRIVET",
+    "created_at": "2025-04-21T18:01:16.942Z",
+    "status": "pending",
+    "approved_at": "2025-04-21T18:01:36.460Z"
   }
 ]
