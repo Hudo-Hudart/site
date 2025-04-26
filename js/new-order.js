@@ -1,199 +1,198 @@
-class CheckoutPage {
+// new-order.js — логика страницы оформления заказа через MySQL API
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.querySelector('.checkout-page')) new CheckoutPage();
+  });
+  
+  class CheckoutPage {
     constructor() {
-        if (!document.querySelector('.checkout-page')) return;
-    
-        this.form = document.getElementById('checkout-form');
+      this.form = document.getElementById('checkout-form');
+      if (!this.form) return;
+  
+      // Загрузка корзины
+      try {
         this.cartItems = JSON.parse(localStorage.getItem('cart')) || [];
-    
-    // Новая проверка пустой корзины
-    if (this.cartItems.length === 0) {
+      } catch (e) {
+        console.error('Ошибка загрузки корзины:', e);
+        this.cartItems = [];
+      }
+      // Если корзина пуста, перенаправляем
+      if (!this.cartItems.length) {
         window.location.href = '/cart.html';
         return;
+      }
+  
+      this.init();
     }
-
-    this.init();
-    }
-
+  
     async init() {
-        await this.loadLocations();
-        this.setupEventListeners();
-        this.initLocationAutocomplete();
+      await this.loadLocations();
+      this.populateLocationDatalist();
+      this.setupEventListeners();
+      this.initLocationAutocomplete();
+  
+      // Начальный пересчёт доставки, если введено значение
+      const input = document.getElementById('location-input');
+      if (input && input.value) {
+        const loc = this.findLocation(input.value);
+        this.updateDeliveryCost(loc);
+      }
     }
-
-    // Загрузка данных о городах и районах
+  
+    // Загрузка доступных локаций из API
     async loadLocations() {
-        try {
-            const response = await fetch('/data/locations.json');
-            this.locations = await response.json();
-            this.populateLocationDatalist();
-        } catch (error) {
-            console.error('Ошибка загрузки локаций:', error);
-        }
+      try {
+        const res = await fetch('/api/locations');
+        if (!res.ok) throw new Error('Сервер вернул ' + res.status);
+        this.locations = await res.json(); // [{id, name, delivery_cost, free_from_amount}, ...]
+      } catch (err) {
+        console.error('Ошибка загрузки локаций:', err);
+        this.locations = [];
+      }
     }
-
-    // Динамическое заполнение datalist
+  
+    // Заполнение datalist
     populateLocationDatalist() {
-        const datalist = document.getElementById('locations-list');
-        datalist.innerHTML = this.locations
-          .map(city => 
-            city.districts
-              .map(district => 
-                `<option value="${city.city}, ${district.name}">${district.name} (доставка ${district.delivery_cost}₽)</option>`
-              )
-              .join('')
-          )
-          .join('');
-      }
-
-    // Инициализация автокомплита
+      const datalist = document.getElementById('locations-list');
+      if (!datalist || !this.locations) return;
+      datalist.innerHTML = this.locations
+        .map(loc =>
+          `<option value="${loc.name}">${loc.name} — доставка ${loc.delivery_cost}₽${loc.free_from_amount > 0 ? ', бесплатно от ' + loc.free_from_amount + '₽' : ''}</option>`
+        ).join('');
+    }
+  
+    // Автокомплит и пересчёт при вводе
     initLocationAutocomplete() {
-        const input = document.getElementById('location-input');
-        input.addEventListener('input', () => {
-            const [city, district] = input.value.split(', ');
-            const location = this.findLocation(city, district);
-            this.updateDeliveryCost(location?.delivery_cost || 0);
-        });
+      const input = document.getElementById('location-input');
+      if (!input) return;
+      input.addEventListener('input', () => {
+        const loc = this.findLocation(input.value);
+        this.updateDeliveryCost(loc);
+      });
     }
-
-    // Поиск локации в данных
-    findLocation(cityName, districtName) {
-        return this.locations
-          .find(c => c.city === cityName)
-          ?.districts
-          .find(d => d.name === districtName);
-      }
-      
-
-    // Обновление стоимости доставки
-    updateDeliveryCost(cost) {
-        const costElement = document.getElementById('delivery-cost');
-        costElement.textContent = cost > 0 ? 
-            `Стоимость доставки: ${cost}₽` : 
-            'Бесплатная доставка';
+  
+    // Поиск локации по названию
+    findLocation(name) {
+      return this.locations.find(l => l.name === name) || null;
     }
-
-    // Обработчики событий
+  
+    // Обработчики полей формы
     setupEventListeners() {
-        // Переключение полей пароля
-        document.getElementById('discount-checkbox')
-            .addEventListener('change', (e) => {
-                const passwordFields = document.querySelector('.password-fields');
-                passwordFields.hidden = !e.target.checked;
-                passwordFields.querySelectorAll('input')
-                    .forEach(input => input.toggleAttribute('required', e.target.checked));
-            });
-
-        // Отправка формы
-        this.form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!this.validateForm()) return;
-
-            try {
-                await this.submitOrder();
-                this.handleSuccess();
-            } catch (error) {
-                this.handleError(error);
-            }
-        });
-    }
-
-    // Валидация формы
-    validateForm() {
-        let isValid = true;
-    const discountChecked = document.getElementById('discount-checkbox').checked;
-
-    this.form.querySelectorAll('[required]').forEach(field => {
-        if (!field.value.trim()) {
-            field.classList.add('invalid');
-            isValid = false;
-        } else {
-            field.classList.remove('invalid');
-        }
-    });
-    if (discountChecked) {
-        const password = this.form.querySelector('[name="password"]').value;
-        const confirm = this.form.querySelector('[name="password_confirm"]').value;
-        
-        if (password !== confirm) {
-            alert('Пароли не совпадают!');
-            isValid = false;
-        }
-    }
-
-    return isValid;
-}
-
-    // Подготовка данных заказа
-    prepareOrderData(formData) {
-        const locationStr = formData.get('location') || '';
-        const [city, district] = locationStr.includes(', ')
-          ? locationStr.split(', ')
-          : [null, null];
-      
-        const location = city && district
-          ? this.findLocation(city, district)
-          : null;
-      
-        const discount = document.getElementById('discount-checkbox').checked;
-      
-        return {
-          customer: {
-            ...Object.fromEntries(formData.entries()),
-            delivery_cost: location?.delivery_cost || 0,
-            has_discount: discount
-          },
-          items: this.cartItems.map(item => ({
-            id: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity
-          })),
-          total: this.calculateTotal(location?.delivery_cost),
-          timestamp: new Date().toISOString()
-        };
+      // Скидка — показ полей пароля
+      const discountCheckbox = document.getElementById('discount-checkbox');
+      if (discountCheckbox) {
+        discountCheckbox.addEventListener('change', e => this.togglePasswordFields(e.target.checked));
       }
-      
-
-    // Расчет итоговой суммы
-    calculateTotal(deliveryCost = 0) {
-        const subtotal = this.cartItems.reduce((sum, item) => 
-            sum + (item.price * item.quantity), 0);
-        
-        const discount = document.getElementById('discount-checkbox').checked ? 0.95 : 1;
-        return (subtotal * discount + deliveryCost).toFixed(2);
+      // Отправка формы
+      this.form.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!this.validateForm()) return;
+        try {
+          await this.submitOrder();
+          this.handleSuccess();
+        } catch (err) {
+          this.handleError(err);
+        }
+      });
     }
-
-    // Отправка на сервер
+  
+    // Показ/скрытие полей пароля
+    togglePasswordFields(enabled) {
+      const section = document.querySelector('.password-fields');
+      if (!section) return;
+      section.hidden = !enabled;
+      section.querySelectorAll('input').forEach(input => input.required = enabled);
+    }
+  
+    // Валидация обязательных полей и паролей
+    validateForm() {
+      let valid = true;
+      this.form.querySelectorAll('[required]').forEach(field => {
+        if (!field.value.trim()) {
+          field.classList.add('invalid');
+          valid = false;
+        } else {
+          field.classList.remove('invalid');
+        }
+      });
+      const discount = document.getElementById('discount-checkbox')?.checked;
+      if (discount) {
+        const pw = this.form.querySelector('[name="password"]').value;
+        const pw2 = this.form.querySelector('[name="password_confirm"]').value;
+        if (pw !== pw2) {
+          alert('Пароли не совпадают');
+          valid = false;
+        }
+      }
+      return valid;
+    }
+  
+    // Пересчёт стоимости доставки с учётом порога бесплатной доставки
+    updateDeliveryCost(loc) {
+      const el = document.getElementById('delivery-cost');
+      if (!el) return;
+      const subtotal = this.cartItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+      let cost = loc ? loc.delivery_cost : 0;
+      if (loc && loc.free_from_amount > 0 && subtotal >= loc.free_from_amount) cost = 0;
+      el.textContent = cost > 0 ? `Стоимость доставки: ${cost}₽` : 'Бесплатная доставка';
+    }
+  
+    // Вычисление итоговой суммы заказа
+    calculateTotal(loc) {
+      const subtotal = this.cartItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+      const discountRate = document.getElementById('discount-checkbox')?.checked ? 0.95 : 1;
+      let cost = loc ? loc.delivery_cost : 0;
+      if (loc && loc.free_from_amount > 0 && subtotal >= loc.free_from_amount) cost = 0;
+      return parseFloat((subtotal * discountRate + cost).toFixed(2));
+    }
+  
+    // Подготовка тела запроса API
+    prepareOrderData() {
+      const data = new FormData(this.form);
+      const name = data.get('customer_name')?.trim() || data.get('name')?.trim();
+      const phone = data.get('customer_phone')?.trim() || data.get('phone')?.trim();
+      const email = data.get('email')?.trim() || '';
+      const payment = data.get('payment') || 'cash';
+      const locationName = data.get('location');
+      const loc = this.findLocation(locationName);
+  
+      const customer = {
+        location_id: loc?.id || null,
+        phone,
+        name,
+        email,
+        payment_method: payment
+      };
+  
+      const items = this.cartItems.map(it => ({ id: it.id, quantity: it.quantity, weight: it.weight || 0, price: it.price }));
+      const delivery_cost = loc?.delivery_cost || 0;
+      const total = this.calculateTotal(loc);
+  
+      return { customer, items, total, delivery_cost, has_discount: document.getElementById('discount-checkbox')?.checked };
+    }
+  
+    // Отправка заказа на сервер
     async submitOrder() {
-        const formData = new FormData(this.form);
-        const orderData = this.prepareOrderData(formData);
-
-        const response = await fetch('/api/orders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderData)
-        });
-
-        if (!response.ok) throw new Error('Ошибка сервера');
-        return response.json();
+      const payload = this.prepareOrderData();
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error(`Сервер вернул ${res.status}`);
+      return res.json();
     }
-
+  
     // Успешное оформление
     handleSuccess() {
-        localStorage.removeItem('cart');
-        window.location.href = '/order-success.html';
+      localStorage.removeItem('cart');
+      window.location.href = '/order-success.html';
     }
-
+  
     // Обработка ошибок
-    handleError(error) {
-        console.error('Ошибка:', error);
-        alert(`Ошибка оформления: ${error.message}`);
+    handleError(err) {
+      console.error('Ошибка оформления:', err);
+      alert(`Ошибка оформления: ${err.message}`);
     }
-}
-
-// Инициализация только на странице оформления
-document.addEventListener('DOMContentLoaded', () => {
-    if (document.querySelector('.checkout-page')) {
-        new CheckoutPage();
-    }
-});
+  }
+  
