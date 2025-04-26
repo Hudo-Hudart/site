@@ -1,249 +1,236 @@
+/* cart.js — логика страницы корзины, отказ от JSON-файлов, использование MySQL через API */
 
-// Логика для страницы корзины (отображение товаров в виде таблицы)
 class CartPage {
     constructor() {
-        // 1. Добавляем обработку ошибок при загрузке
-        try {
-            this.items = JSON.parse(localStorage.getItem('cart')) || [];
-        } catch(e) {
-            console.error('Ошибка загрузки корзины:', e);
-            this.items = [];
-        }
-        
-        // 2. Добавляем проверку структуры товаров
-        this.items = this.items.filter(item => 
-            item && item.id && item.name && item.price && item.quantity
-        );
-        
-        this.initCart();
+      this.cartIconCount = document.getElementById('cart-count');
+      this.itemsContainer = document.getElementById('cart-items');
+      this.totalElement = document.getElementById('cart-total');
+      this.checkoutBtn = document.querySelector('.checkout-btn');
+      this.oneClickBtn = document.querySelector('.one-click-btn');
+  
+      // Загрузка корзины из локального хранилища
+      try {
+        this.items = JSON.parse(localStorage.getItem('cart')) || [];
+      } catch (err) {
+        console.error('Ошибка загрузки корзины из localStorage:', err);
+        this.items = [];
+      }
+  
+      // Убираем некорректные элементы
+      this.items = this.items.filter(i => i && i.id && i.price != null && i.quantity != null);
+  
+      this.initEventListeners();
+      this.init();
+      
     }
 
-    initCart() {
+    initEventListeners() {
+        document.addEventListener('cart-updated', () => {
+          try {
+            this.items = JSON.parse(localStorage.getItem('cart')) || [];
+            this.items = this.items.filter(i => i && i.id && i.price != null && i.quantity != null);
+            this.renderCartPreview();
+            this.renderCartPage();
+          } catch (err) {
+            console.error('Ошибка при обновлении корзины:', err);
+          }
+        });
+      }
+  
+    init() {
+      this.renderCartPreview();
+      if (this.itemsContainer) {
         this.renderCartPage();
         this.initEvents();
-        this.saveCartData(); // 3. Синхронизируем при инициализации
+      }
+      
     }
-
-    initEvents() {
-        // 4. Используем делегирование событий для динамических элементов
-        document.addEventListener('click', (e) => {
-            const target = e.target;
-            
-            if (target.closest('.checkout-btn')) {
-                this.handleCheckout();
-            }
-
-            if (target.closest('.one-click-btn')) {
-                this.handleQuickOrder();
-            }
-            
-            if (target.closest('.minus')) {
-                const index = target.dataset.index;
-                this.updateQuantity(index, -1);
-            }
-            
-            if (target.closest('.plus')) {
-                const index = target.dataset.index;
-                this.updateQuantity(index, 1);
-            }
-            
-            if (target.closest('.remove-item')) {
-                const index = target.dataset.index;
-                this.removeItem(index);
-            }
-        });
+  
+    // Показываем количество товаров в иконке корзины
+    renderCartPreview() {
+      if (!this.cartIconCount) return;
+      const totalQty = this.items.reduce((sum, i) => sum + (i.quantity || 0), 0);
+      this.cartIconCount.textContent = totalQty;
     }
-
+  
+    // Отрисовка полной таблицы корзины
     renderCartPage() {
-        const cartItemsContainer = document.getElementById('cart-items');
-        const cartTotalElement = document.getElementById('cart-total');
-
-        if (!cartItemsContainer || !cartTotalElement) {
-            console.error('Элементы корзины не найдены на странице!');
-            return;
-        }
-
-        cartItemsContainer.innerHTML = '';
-        let totalPrice = 0;
-
-        this.items.forEach((item, index) => {
-            // 5. Добавляем проверку на валидность товара
-            if(!item || typeof item !== 'object') return;
-            
-            const itemSum = item.price * item.quantity;
-            totalPrice += itemSum;
-
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>
-                    <div class="cart-product">
-                        <!-- 6. Добавляем обработку отсутствующих изображений -->
-                        <img src="${item.image ? '/images/' + item.image : '/images/placeholder.webp'}" 
-                             alt="${item.name}" 
-                             width="50"
-                             onerror="this.src='/images/placeholder.webp'">
-                        <div>
-                            <span>${item.name}</span><br>
-                            <small>${item.weight || 'N/A'} кг</small>
-                        </div>
-                    </div>
-                </td>
-                <!-- 7. Форматируем числа -->
-                <td>${item.price?.toFixed(2) || 0} ₽</td>
-                <td>
-                    <div class="quantity-control">
-                        <button class="minus" data-index="${index}">-</button>
-                        <span class="qty">${item.quantity}</span>
-                        <button class="plus" data-index="${index}">+</button>
-                    </div>
-                </td>
-                <td class="item-sum">${itemSum.toFixed(2)} ₽</td>
-                <td>
-                    <button class="remove-item" data-index="${index}">×</button>
-                </td>
-            `;
-
-            cartItemsContainer.appendChild(row);
-        });
-
-        // 8. Обновляем общую сумму с форматированием
-        cartTotalElement.textContent = totalPrice.toFixed(2);
-    }
-
-    updateQuantity(index, delta) {
-        // 9. Добавляем проверку индекса
-        if(!this.items[index]) return;
-        
-        const item = this.items[index];
-        const newQuantity = item.quantity + delta;
-        
-        if (newQuantity < 1) {
-            if(confirm('Удалить товар из корзины?')) {
-                this.removeItem(index);
-            }
-            return;
-        }
-        
-        item.quantity = newQuantity;
-        this.saveCartData();
-        this.renderCartPage();
-    }
-
-    removeItem(index) {
-        // 10. Подтверждение удаления
-        if(confirm('Вы уверены, что хотите удалить товар?')) {
-            this.items.splice(index, 1);
-            this.saveCartData();
-            this.renderCartPage();
-        }
-    }
-
-    saveCartData() {
-        try {
-            localStorage.setItem('cart', JSON.stringify(this.items));
-            // 11. Уведомляем другие компоненты
-            document.dispatchEvent(new CustomEvent('cart-updated'));
-        } catch(e) {
-            console.error('Ошибка сохранения корзины:', e);
-        }
-    }
-
-    handleCheckout() {
-        // 12. Добавляем базовую валидацию
-        if(this.items.length === 0) {
-            alert('Корзина пуста!');
-            return;
-        }
-        
-        console.log('Оформление заказа:', this.items);
-        // Дополнительная логика оформления заказа...
-        window.location.href = '/new-order.html';
-    }
-
-    handleQuickOrder() {
-        if (this.items.length === 0) {
-            alert('Корзина пуста!');
-            return;
-        }
-        
-        this.createQuickOrderModal();
-        this.setupQuickOrderHandlers();
-        new QuickOrderModal(this.items);
-    }
-    
-    createQuickOrderModal() {
-        const modalHTML = `
-            <div class="quick-order-modal">
-                <div class="modal-content">
-                    <span class="close-modal">&times;</span>
-                    <h3>Быстрый заказ</h3>
-                    <form id="quick-order-form">
-                        <input type="text" name="name" placeholder="Ваше имя" required>
-                        <input type="tel" name="phone" placeholder="Телефон" pattern="\+7\d{10}" required>
-                        <input type="text" name="street" placeholder="Улица">
-                        <input type="text" name="house" placeholder="Дом">
-                        <textarea name="comment" placeholder="Комментарий"></textarea>
-                        <button type="submit">Подтвердить</button>
-                    </form>
-                </div>
+      if (!this.itemsContainer || !this.totalElement) return;
+      this.itemsContainer.innerHTML = '';
+      let totalSum = 0;
+  
+      this.items.forEach((item, idx) => {
+        const price = parseFloat(item.price) || 0;
+        const qty = parseInt(item.quantity, 10) || 0;
+        const sum = price * qty;
+        totalSum += sum;
+  
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>
+            <div class="cart-product">
+              <img src="${item.image || '/images/placeholder.webp'}" alt="${item.name}" width="50" onerror="this.src='/images/placeholder.webp'">
+              <div>
+                <strong>${item.name}</strong><br>
+                <small>Вес: ${item.weight || 'N/A'} г</small>
+              </div>
             </div>
+          </td>
+          <td>${price.toFixed(2)} ₽</td>
+          <td>
+            <button class="quantity-btn minus" data-index="${idx}">-</button>
+            <span class="quantity-value">${qty}</span>
+            <button class="quantity-btn plus" data-index="${idx}">+</button>
+          </td>
+          <td class="item-sum">${sum.toFixed(2)} ₽</td>
+          <td><button class="remove-btn" data-index="${idx}">×</button></td>
         `;
-        
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        this.itemsContainer.appendChild(tr);
+      });
+  
+      this.totalElement.textContent = totalSum.toFixed(2);
     }
-    
-    setupQuickOrderHandlers() {
-        const modal = document.querySelector('.quick-order-modal');
-        
-        modal.querySelector('.close-modal').addEventListener('click', () => {
-            modal.remove();
-        });
-    
-        modal.querySelector('form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            
-            if (!this.validateQuickOrder(formData)) {
-                alert('Заполните обязательные поля: Имя и Телефон');
-                return;
-            }
-    
-            const orderData = {
-                items: this.items,
-                customer: Object.fromEntries(formData.entries()),
-                timestamp: new Date().toISOString()
-            };
-    
-            try {
-                await fetch('/api/quick-orders', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(orderData)
-                });
-                modal.remove();
-                alert('Заказ принят!');
-                this.items = [];
-                this.saveCartData();
-                this.renderCartPage();
-            } catch (error) {
-                console.error('Ошибка оформления:', error);
-                alert('Ошибка при отправке заказа');
-            }
-        });
+  
+    initEvents() {
+      document.addEventListener('click', e => {
+        const minus = e.target.closest('.minus');
+        const plus = e.target.closest('.plus');
+        const remove = e.target.closest('.remove-btn');
+  
+        if (minus) this.changeQuantity(minus.dataset.index, -1);
+        if (plus) this.changeQuantity(plus.dataset.index, 1);
+        if (remove) this.removeItem(remove.dataset.index);
+        if (e.target.closest('.checkout-btn')) this.handleCheckout();
+        if (e.target.closest('.one-click-btn')) this.handleQuickOrder();
+      });
     }
-    
-    validateQuickOrder(formData) {
-        const name = formData.get('name')?.trim();
-        const phone = formData.get('phone')?.trim();
-        return name && phone && phone.match(/\+7\d{10}/);
+  
+    changeQuantity(idxStr, delta) {
+      const idx = parseInt(idxStr, 10);
+      const item = this.items[idx];
+      if (!item) return;
+  
+      const newQty = item.quantity + delta;
+      if (newQty < 1) {
+        if (confirm('Удалить товар из корзины?')) {
+          this.removeItem(idx);
+        }
+        return;
+      }
+      item.quantity = newQty;
+      this.saveCart();
+      this.renderCartPage();
+      this.renderCartPreview();
     }
-    
-
-}
-
-// 13. Проверяем наличие корзины на странице перед инициализацией
-document.addEventListener('DOMContentLoaded', () => {
+  
+    removeItem(idxStr) {
+      const idx = parseInt(idxStr, 10);
+      if (confirm('Вы уверены, что хотите удалить этот товар?')) {
+        this.items.splice(idx, 1);
+        this.saveCart();
+        this.renderCartPage();
+        this.renderCartPreview();
+      }
+    }
+  
+    saveCart() {
+      try {
+        localStorage.setItem('cart', JSON.stringify(this.items));
+        document.dispatchEvent(new CustomEvent('cart-updated', { detail: this.items }));
+      } catch (err) {
+        console.error('Ошибка сохранения корзины в localStorage:', err);
+      }
+    }
+  
+    handleCheckout() {
+      if (!this.items.length) {
+        alert('Корзина пуста!');
+        return;
+      }
+      // Переход на страницу оформления заказов, где new-order.js отправит POST /api/orders
+      window.location.href = '/new-order.html';
+    }
+  
+    handleQuickOrder() {
+      if (!this.items.length) {
+        alert('Корзина пуста!');
+        return;
+      }
+      this.openQuickOrderModal();
+    }
+  
+    openQuickOrderModal() {
+      const modalHtml = `
+        <div class="quick-order-modal">
+          <div class="modal-window">
+            <span class="close">×</span>
+            <h2>Быстрый заказ</h2>
+            <form id="quick-order-form">
+              <input type="text" name="customer_name" placeholder="Ваше имя" required>
+              <input type="tel" name="customer_phone" placeholder="Телефон +7..." pattern="\\+7\\d{10}" required>
+              <input type="text" name="street" placeholder="Улица">
+              <input type="text" name="house_number" placeholder="Дом">
+              <textarea name="comment" placeholder="Комментарий"></textarea>
+              <button type="submit">Отправить заказ</button>
+            </form>
+          </div>
+        </div>
+      `;
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      this.bindQuickOrderEvents();
+    }
+  
+    bindQuickOrderEvents() {
+      const modal = document.querySelector('.quick-order-modal');
+      const closeBtn = modal.querySelector('.close');
+      const form = modal.querySelector('#quick-order-form');
+  
+      closeBtn.addEventListener('click', () => modal.remove());
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = new FormData(form);
+        const customer_name = data.get('customer_name').trim();
+        const customer_phone = data.get('customer_phone').trim();
+        if (!customer_name || !/^\+7\d{10}$/.test(customer_phone)) {
+          alert('Введите имя и корректный телефон');
+          return;
+        }
+        const payload = {
+          street: data.get('street').trim() || '',
+          house_number: data.get('house_number').trim() || '',
+          customer_name,
+          customer_phone,
+          comment: data.get('comment').trim() || '',
+          total_amount: this.items.reduce((sum, i) => sum + i.price * i.quantity, 0),
+          items: this.items.map(i => ({ id: i.id, quantity: i.quantity, weight: i.weight || 0, price: i.price }))
+        };
+  
+        try {
+          const res = await fetch('/api/quick-orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error();
+          modal.remove();
+          alert('Заказ принят!');
+          this.items = [];
+          this.saveCart();
+          this.renderCartPage();
+          this.renderCartPreview();
+        } catch (err) {
+          console.error('Ошибка при быстром заказе:', err);
+          alert('Не удалось оформить быстрый заказ');
+        }
+      });
+    }
+  }
+  
+  // Инициализация страницы
+  
+  document.addEventListener('DOMContentLoaded', () => {
     if (document.querySelector('.cart-page')) {
-        new CartPage();
+      new CartPage();
     }
-});
+  });
+  
