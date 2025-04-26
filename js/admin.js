@@ -1,14 +1,14 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Обновленные эндпоинты API согласно server.js
     const CONFIG = {
-        ORDERS_DATA_URL: '/api/orders',
-        QUICK_ORDERS_DATA_URL: '/api/quick-orders',
-        PRODUCTS_DATA_URL: '/api/products',
-        CATEGORIES_DATA_URL: '/api/categories',
-        UPLOAD_IMAGE_URL: '/api/upload',
-        PENDING_REVIEWS_URL: '/api/reviews/pending',
-        APPROVED_REVIEWS_URL: '/api/reviews/approved',
-        REVIEWS_URL: '/api/reviews'
+        ORDERS_DATA_URL: 'http://localhost:3000/api/orders',
+        QUICK_ORDERS_DATA_URL: 'http://localhost:3000/api/quick-orders',
+        PRODUCTS_DATA_URL: 'http://localhost:3000/api/data/products.json',
+        CATEGORIES_DATA_URL: 'http://localhost:3000/api/data/categories.json',
+        SAVE_DATA_URL: 'http://localhost:3000/api/save-data',
+        UPLOAD_IMAGE_URL: 'http://localhost:3000/api/upload-image',
+        PENDING_REVIEWS_URL: 'http://localhost:3000/api/data/pending-reviews.json',
+        APPROVED_REVIEWS_URL: 'http://localhost:3000/api/data/approved-reviews.json',
+        SAVE_REVIEWS_URL: 'http://localhost:3000/api/reviews' // Новый эндпоинт
     };
 
     let state = {
@@ -22,34 +22,42 @@ document.addEventListener('DOMContentLoaded', () => {
         approvedReviews: []
     };
 
-    // Переписанная функция сохранения отзыва
+    
+
     const saveReview = async (reviewData) => {
         try {
-            const response = await fetch(CONFIG.REVIEWS_URL, {
+            // Получаем текущие отзывы
+            const response = await fetch(CONFIG.PENDING_REVIEWS_URL);
+            const currentReviews = await response.json();
+    
+            // Генерируем ID для нового отзыва
+            const newId = Math.max(...currentReviews.map(r => r.id), 0) + 1;
+            
+            // Формируем полный объект отзыва
+            const newReview = {
+                ...reviewData,
+                id: newId,
+                created_at: new Date().toISOString(),
+                status: 'pending',
+                // Добавить недостающие поля
+                author: reviewData.author || 'Аноним',
+                content: reviewData.content,
+                rating: parseInt(reviewData.rating)
+              };
+    
+            // Обновляем список отзывов
+            const updatedReviews = [...currentReviews, newReview];
+    
+            // Отправляем на сервер
+            await fetch(CONFIG.SAVE_REVIEWS_URL, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify({
-                    author_name: reviewData.author || 'Аноним',
-                    email: reviewData.email,
-                    phone: reviewData.phone,
-                    rating: parseInt(reviewData.rating),
-                    comment: reviewData.content,
-                    product_id: reviewData.productId
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedReviews)
             });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message);
-            }
-
+    
             return true;
         } catch (error) {
             console.error('Ошибка сохранения отзыва:', error);
-            showError(`Ошибка: ${error.message}`);
             return false;
         }
     };
@@ -74,190 +82,181 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const checkAdminAccess = () => {
         const user = JSON.parse(localStorage.getItem('currentUser'));
-        if (!user || user.role !== 'admin') {
-            window.location.href = '/login.html';
-            return false;
-        }
-        return true;
-    };
+        return user?.role === 'admin';
+      };
 
-    // Обновленная загрузка изображений
-    const uploadImage = async (file) => {
+
+    const uploadImage = async (file, type) => {
         const formData = new FormData();
         formData.append('image', file);
+        formData.append('type', type);
 
         try {
             const response = await fetch(CONFIG.UPLOAD_IMAGE_URL, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
                 body: formData
             });
-            
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error);
-            
-            return { path: data.imageUrl };
-            
+            return await response.json();
         } catch (error) {
             console.error('Upload error:', error);
-            showError('Ошибка загрузки изображения');
-            throw error;
+            alert('Ошибка загрузки изображения');
         }
     };
 
     const loadOrders = async () => {
+        // Сохраняем предыдущие данные для восстановления при ошибках
         const previousState = {
             orders: [...state.orders],
             quickOrders: [...state.quickOrders]
         };
     
         try {
+            // Инициализируем таймер для отмены долгих запросов
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-            // Добавляем авторизацию и правильные заголовки
+            // Выполняем параллельные запросы с обработкой прерывания
             const [ordersRes, quickOrdersRes] = await Promise.all([
                 fetch(CONFIG.ORDERS_DATA_URL, { 
-                    signal: controller.signal,
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
+                    signal: controller.signal 
                 }),
                 fetch(CONFIG.QUICK_ORDERS_DATA_URL, { 
-                    signal: controller.signal,
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
+                    signal: controller.signal 
                 })
             ]);
     
             clearTimeout(timeoutId);
     
+            // Обрабатываем каждый ответ отдельно
             const processResponse = async (response, type) => {
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.message || `HTTP ${response.status} для ${type}`);
+                    const data = await response.json();
+                    console.log('Received error data:', data);
+                    throw new Error(`HTTP ${response.status} для ${type}`);
                 }
-    
-                const data = await response.json();
+            
+                const contentType = response.headers.get('content-type') || '';
+                const isJSON = /^(application\/json|text\/json)/.test(contentType);
                 
-                // Нормализация данных для фронтенда
-                return data.map(order => {
-                    // Общие поля для обоих типов заказов
-                    const base = {
-                        id: order.id,
-                        status: order.status,
-                        total: parseFloat(order.total_amount),
-                        created_at: order.created_at
-                    };
+                if (!isJSON) {
+                    throw new TypeError(`Неверный Content-Type (${contentType}) для ${type}`);
+                }
+            
+                const data = await response.json();
+                console.log('Received data for', type, ':', data);
+
+                // === Нормализация для обоих типов ===
+    data.forEach((order, index) => {
+        if (!order.id) order.id = `${type}-${Date.now()}-${index}`;
+        if (!order.status) order.status = 'new';
+        if (typeof order.total === 'string') {
+            order.total = parseFloat(order.total.replace(',', '.'));
+        }
     
+          // 3) для быстрых: вычисляем total из items, если его нет
+          if (type === 'быстрых заказов') {
+            // Нормализация структуры клиента
+            order.customer = order.customer || {};
+            order.customer.name = order.customer.name || 'Не указано';
+            order.customer.phone = order.customer.phone || 'Без телефона';
+            
+            // Вычисление total если отсутствует
+            if (!order.total) {
+                order.total = order.items.reduce((sum, item) => {
+                    return sum + (Number(item.price) || 0) * (item.quantity || 1);
+                }, 0);
+            }
+        } else { // Для обычных заказов
+            // Нормализация имени
+            if (order.customer?.name && !order.customer.first_name) {
+                const [first, ...rest] = order.customer.name.split(' ');
+                order.customer.first_name = first;
+                order.customer.last_name = rest.join(' ') || '';
+            }
+        }
+    });
+            
+                // Разные критерии валидации для разных типов заказов
+                const isValid = data.every(item => {
+                    // Общие обязательные поля для всех заказов
+                    const baseCheck = item.id && item.customer && item.total !== undefined;
                     if (type === 'обычных заказов') {
-                        return {
-                            ...base,
-                            customer: {
-                                first_name: order.customer_fullname?.split(' ')[0] || '',
-                                last_name: order.customer_fullname?.split(' ').slice(1).join(' ') || '',
-                                phone: order.customer_phone,
-                                email: order.customer_email,
-                                payment_method: order.payment_method,
-                                delivery_cost: parseFloat(order.delivery_cost)
-                            },
-                            items: order.items?.map(item => ({
-                                id: item.product_variant_id,
-                                name: item.title, // Предполагаем, что есть JOIN с продуктами
-                                price: parseFloat(item.price),
-                                quantity: item.quantity,
-                                weight: parseFloat(item.weight)
-                            })) || []
-                        };
+                    return baseCheck &&
+                            item.customer.first_name &&
+                            item.customer.last_name &&
+                            typeof item.total === 'number';
                     }
-    
-                    // Для быстрых заказов
-                    return {
-                        ...base,
-                        customer: {
-                            name: order.customer_name,
-                            phone: order.customer_phone,
-                            street: order.street,
-                            house: order.house_number,
-                            comment: order.comment
-                        },
-                        items: order.items?.map(item => ({
-                            id: item.product_variant_id,
-                            name: item.title,
-                            price: parseFloat(item.price),
-                            quantity: item.quantity,
-                            weight: parseFloat(item.weight)
-                        })) || []
-                    };
+                    if (type === 'быстрых заказов') {
+                    return baseCheck &&
+                            item.customer.name &&
+                            item.customer.phone &&
+                            (typeof item.total === 'number' || !isNaN(item.total));
+                    }
+                    
+                    return false;
                 });
+            
+            
+                if (!isValid) {
+                    throw new Error(`Неверный формат данных для ${type}`);
+                }
+            
+                return data;
             };
     
+            // Параллельная обработка ответов
             const [orders, quickOrders] = await Promise.all([
                 processResponse(ordersRes, 'обычных заказов'),
                 processResponse(quickOrdersRes, 'быстрых заказов')
             ]);
     
-            // Валидация полученных данных
-            const validateOrder = (order, type) => {
-                const required = {
-                    'обычных заказов': ['first_name', 'last_name', 'email'],
-                    'быстрых заказов': ['name', 'phone', 'street']
-                };
-    
-                return required[type].every(field => 
-                    order.customer[field] && 
-                    typeof order.customer[field] === 'string' &&
-                    order.customer[field].trim().length > 0
-                );
-            };
-    
-            if (!orders.every(o => validateOrder(o, 'обычных заказов'))) {
-                throw new Error('Неверный формат обычных заказов');
-            }
-            
-            // И для быстрых заказов тоже поправим
-            if (!quickOrders.every(o => validateOrder(o, 'быстрых заказов'))) {
-                throw new Error('Неверный формат быстрых заказов');
-            }
-    
+            // Атомарное обновление состояния
             state.orders = orders;
             state.quickOrders = quickOrders;
     
         } catch (error) {
             console.error('Ошибка загрузки заказов:', error);
+            
+            // Восстанавливаем предыдущее состояние
             state.orders = previousState.orders;
             state.quickOrders = previousState.quickOrders;
-            showError(error.message);
+    
+            // Детализированные сообщения об ошибках
+            const errorMessage = error.name === 'AbortError' 
+                ? 'Превышено время ожидания загрузки'
+                : `Не удалось загрузить заказы: ${error.message}`;
+    
+            showError(errorMessage);
+    
+            // Перевыбрасываем ошибку для внешней обработки
             throw error;
         } finally {
-            renderOrdersSection('full');
-            renderOrdersSection('quick-orders');
+            if (document.getElementById('full-orders-section')) {
+                renderOrdersSection('full');
+            }
+            if (document.getElementById('quick-orders-section')) {
+                renderOrdersSection('quick-orders');
+            }
         }
     };
 
     // В начало блока с рендером заказов, прямо перед renderOrdersSection:
-    const renderStatusControls = (order, type) => {
-        // Соответствие статусов из таблиц БД
-        const statusOptions = type === 'full' 
-            ? ['new', 'processing', 'shipped', 'delivered', 'cancelled']
-            : ['new', 'processing', 'completed', 'cancelled'];
-    
-        return `
-          <div class="order-controls">
-            <select class="status-select">
-              ${statusOptions.map(status => `
-                <option value="${status}" ${order.status === status ? 'selected' : ''}>
-                  ${getStatusText(status)}
-                </option>
-              `).join('')}
-            </select>
-          </div>
-        `;
-    };
-    
+const renderStatusControls = (order, type) => {
+    const statusOptions = ['new', 'processing', 'completed', 'cancelled'];
+    return `
+      <div class="order-controls">
+        <select class="status-select">
+          ${statusOptions.map(status => `
+            <option value="${status}" ${order.status === status ? 'selected' : ''}>
+              ${getStatusText(status)}
+            </option>
+          `).join('')}
+        </select>
+      </div>
+    `;
+  };
+  
+
     const renderOrdersSection = (type) => {
         const orders = type === 'full' ? state.orders : state.quickOrders;
         const sectionId = `${type}-section`;
@@ -271,14 +270,10 @@ document.addEventListener('DOMContentLoaded', () => {
                    data-id="${order.id}"
                    data-order-type="${type}">
                 <div class="order-meta">
-                    <span class="order-status ${order.status}">
-                        ${getStatusText(order.status)}
-                    </span>
-                    <span class="order-id">#${order.id}</span>
-                    <time class="order-date">
-                        ${new Date(order.created_at).toLocaleDateString()}
-                    </time>
-                    </div>
+                  <span class="order-status ${order.status}">
+                    ${getStatusText(order.status)}
+                  </span>
+                </div>
                 <div class="order-customer">
                   ${formatCustomerInfo(order, type)}
                 </div>
@@ -292,23 +287,24 @@ document.addEventListener('DOMContentLoaded', () => {
         container.querySelectorAll('.status-select').forEach(select => {
           select.addEventListener('change', handleStatusChange);
         });
-    };
+      };
+      
+
+    // Новая функция для обработки изменения статуса
+const handleStatusChange = async (e) => {
+    const orderCard = e.target.closest('.order-card');
+    const orderId = orderCard.dataset.id;
+    const orderType = orderCard.closest('[data-order-type]').dataset.orderType;
+    const newStatus = e.target.value;
     
-    const handleStatusChange = async (e) => {
-        const orderCard = e.target.closest('.order-card');
-        const orderId = parseInt(orderCard.dataset.id);
-        const orderType = orderCard.dataset.orderType;
-        const newStatus = e.target.value;
-        
-        await updateOrderStatus(orderId, newStatus, orderType);
-    };
+    await updateOrderStatus(orderId, newStatus, orderType);
+};
     
+    // 4. Добавляем вспомогательные методы
     const getStatusText = (status) => {
         const statusMap = {
             new: 'Новый',
             processing: 'В обработке',
-            shipped: 'Отправлен',
-            delivered: 'Доставлен',
             completed: 'Завершен',
             cancelled: 'Отменен'
         };
@@ -316,65 +312,87 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     const formatCustomerInfo = (order, type) => {
-        
         if (type === 'full') {
             return `
                 ${order.customer.first_name} ${order.customer.last_name}<br>
-                📞 ${order.customer.phone}<br>
-                📧 ${order.customer.email}
+                ${order.customer.phone}<br>
+                ${order.customer.email || ''}
             `;
         }
         return `
-            👤 ${order.customer.name}<br>
-            📞 ${order.customer.phone}<br>
-            📍 ${order.customer.street} ${order.customer.house}
+            ${order.customer.name}<br>
+            ${order.customer.phone}<br>
+            ${order.customer.street} ${order.customer.house}
         `;
     };
-
-    const calculateTotalWeight = items => 
-        items.reduce((sum, item) => sum + (item.weight || 0), 0).toFixed(2);
     
     const renderOrderDetails = (order, type) => {
-        const total = parseFloat(order.total).toFixed(2);
-        const itemsHTML = order.items.map(item => `
-            <div class="order-item">
-                <span>${item.name}</span>
-                <span>${item.quantity} × ${parseFloat(item.price).toFixed(2)} ₽</span>
-                ${item.weight ? `<span class="weight">${item.weight} кг</span>` : ''}
-            </div>
-        `).join('');
-    
         if (type === 'full') {
             return `
-                <div class="order-details">
-                    <div class="order-items">${itemsHTML}</div>
-                    <div class="order-totals">
-                        <p>Сумма: ${total} ₽</p>
-                        <p>Способ оплаты: ${order.customer.payment_method}</p>
-                        ${order.customer.delivery_cost > 0 ? 
-                            `<p>Доставка: ${parseFloat(order.customer.delivery_cost).toFixed(2)} ₽</p>` : ''}
-                        ${order.has_discount ? '<p class="discount">Скидка применена</p>' : ''}
-                    </div>
+                <div class="order-items">
+                    ${order.items.map(item => `
+                        <div class="order-item">
+                            <span>${item.name}</span>
+                            <span>${item.quantity} × ${item.price.toFixed(2)} ₽</span>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="order-totals">
+                    <p>Сумма: ${order.total} ₽</p>
+                    <p>Способ оплаты: ${order.customer.payment_method}</p>
+                    ${order.customer.delivery_cost > 0 ? 
+                        `<p>Доставка: ${order.customer.delivery_cost} ₽</p>` : ''}
                 </div>
             `;
         }
-        
         return `
-            <div class="order-details">
-                <div class="order-items">${itemsHTML}</div>
-                <div class="order-meta">
-                ${order.customer.comment ? 
-                    `<p class="comment">💬 ${order.customer.comment}</p>` : ''}
-                <p class="total">Итого: ${total} ₽</p>
-                ${order.items.some(i => i.weight) ? 
-                    `<p class="weight-info">Общий вес: ${calculateTotalWeight(order.items)} кг</p>` : ''}
-                </div>
+        <div class="order-details">
+            <div class="order-items">
+                ${order.items.map(item => `
+                    <div class="order-item">
+                        <span>${item.name}</span>
+                        <span>${item.quantity} × ${item.price.toFixed(2)} ₽</span>
+                    </div>
+                `).join('')}
             </div>
+            <div class="order-meta">
+                <p>Адрес: ${order.customer.street} ${order.customer.house}</p>
+                ${order.customer.comment ? 
+                    `<p>Комментарий: ${order.customer.comment}</p>` : ''}
+                <p>Итого: ${order.total.toFixed(2)} ₽</p>
+            </div>
+        </div>
     `;
 };
     
+    const setupOrderListeners = () => {
+        document.addEventListener('click', async (e) => {
+          if (e.target.classList.contains('status-select')) {
+            const orderCard = e.target.closest('.order-card');
+            const orderId = orderCard.dataset.id;
+            const orderType = orderCard.dataset.orderType;
+            const newStatus = e.target.value;
+            await updateOrderStatus(orderId, newStatus, orderType);
+          }
+      
+          if (e.target.classList.contains('export-csv')) {
+            const orderType = e.target.dataset.orderType;
+            exportToCSV(orderType);
+          }
+        });
+      
+        document.addEventListener('input', (e) => {
+          if (e.target.classList.contains('order-search')) {
+            const searchTerm = e.target.value.toLowerCase();
+            const orderType = e.target.dataset.orderType;
+            filterOrders(searchTerm, orderType);
+          }
+        });
+      };
+      
+  
+    // 6. Добавляем бизнес-логику
     const updateOrderStatus = async (orderId, newStatus, type) => {
-        let targetOrders, orderIndex, select;
         try {
             const endpoint = type === 'full' 
                 ? `${CONFIG.ORDERS_DATA_URL}/${orderId}`
@@ -382,168 +400,127 @@ document.addEventListener('DOMContentLoaded', () => {
     
             const response = await fetch(endpoint, {
                 method: 'PATCH',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })
             });
     
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка сервера');
-            }
-
-            // В updateOrderStatus добавить:
-            if (response.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/login.html';
-                return;
+                const errorText = await response.text();
+                throw new Error(errorText);
             }
     
             // Обновляем локальное состояние
-            targetOrders = type === 'full' ? state.orders : state.quickOrders;
-        orderIndex = targetOrders.findIndex(o => o.id === orderId);
-        
-        if (orderIndex > -1) {
-            targetOrders[orderIndex].status = newStatus;
+            const targetOrders = type === 'full' ? state.orders : state.quickOrders;
+            const orderIndex = targetOrders.findIndex(o => o.id === orderId);
+            if (orderIndex > -1) {
+                targetOrders[orderIndex].status = newStatus;
+            }
+    
             renderOrdersSection(type);
+        } catch (error) {
+            console.error('Ошибка обновления статуса:', error);
+            showError(`Ошибка обновления статуса: ${error.message}`);
         }
-    } catch (error) {
-        console.error('Ошибка обновления статуса:', error);
-        showError(`Ошибка: ${error.message}`);
-        
-        // Проверка существования переменных
-        if (targetOrders && orderIndex !== undefined && orderIndex > -1) {
-            const prevStatus = targetOrders[orderIndex].status;
-            select = document.querySelector(`[data-id="${orderId}"] .status-select`);
-            if (select) select.value = prevStatus;
-        }
-    }
-};
+    };
+    
 
+    const loadReviews = async () => {
+        try {
+            const [pendingRes, approvedRes] = await Promise.all([
+              fetch(CONFIG.PENDING_REVIEWS_URL),
+              fetch(CONFIG.APPROVED_REVIEWS_URL)
+            ]);
+            
+            if (!pendingRes.ok || !approvedRes.ok) throw new Error('Ошибка сервера');
+            
+            state.pendingReviews = await pendingRes.json();
+            state.approvedReviews = await approvedRes.json();
+            
+          } catch (error) {
+            console.error('Ошибка загрузки отзывов:', error);
+            alert('Не удалось загрузить отзывы');
+            throw error;
+          }
+    };
 
-
-        const renderReviews = () => {
-            const createReviewCard = (review, isPending) => `
-                <div class="review-card" data-id="${review.id}">
-                    <div class="review-header">
-                        <span class="review-author">${review.author_name}</span>
-                        <div class="review-meta">
-                            <span class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
-                            <time>${new Date(review.created_at).toLocaleDateString()}</time>
-                        </div>
-                    </div>
-                    <p class="review-content">${review.comment}</p>
-                    <div class="review-actions">
-                        ${isPending ? `<button data-action="approve">✅ Одобрить</button>` : ''}
-                        <button data-action="delete">🗑 Удалить</button>
+    const renderReviews = () => {
+        // В функции renderReviews()
+        // Шаблонизатор для карточек
+        const createReviewCard = (review, isPending) => `
+            <div class="review-card" data-id="${review.id}">
+                <div class="review-header">
+                    <span class="review-author">${review.author}</span>
+                    <div class="review-meta">
+                        <span class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
+                        <time>${new Date(review.created_at).toLocaleDateString()}</time>
                     </div>
                 </div>
-            `;
+                <p class="review-content">${review.content}</p>
+                <div class="review-actions">
+                    ${isPending ? `<button data-action="approve">✅ Одобрить</button>` : ''}
+                    <button data-action="delete">🗑 Удалить</button>
+                </div>
+            </div>
+        `;
         
-            DOM.pendingList.innerHTML = state.pendingReviews.map(r => 
-                createReviewCard(r, true)).join('');
-                
-            DOM.approvedList.innerHTML = state.approvedReviews.map(r => 
-                createReviewCard(r, false)).join('');
+        // Очистка и заполнение списков
+        DOM.pendingList.innerHTML = state.pendingReviews.map(r => 
+            createReviewCard(r, true)).join('');
             
-            DOM.reviewCounters.pending.textContent = state.pendingReviews.length;
-            DOM.reviewCounters.approved.textContent = state.approvedReviews.length;
-        }
-
+        DOM.approvedList.innerHTML = state.approvedReviews.map(r => 
+            createReviewCard(r, false)).join('');
+        
+        // Обновление счетчиков
+        DOM.reviewCounters.pending.textContent = state.pendingReviews.length;
+        DOM.reviewCounters.approved.textContent = state.approvedReviews.length;
+    };
     // Инициализация
     const init = async () => {
         await loadInitialData();
-        await loadOrders();
-        await loadReviews(); // Добавлена загрузка отзывов
-        setupOrderListeners();
+        await loadOrders(); // Добавляем загрузку заказов
+        setupOrderListeners(); // Добавляем новые обработчики
         setupEventListeners();
         renderAll();
         renderOrdersSection('full');
         renderOrdersSection('quick-orders');
         updateCategorySelects();
-        renderReviews(); // Добавлен вызов рендера отзывов
-};
+    };
     // Загрузка данных
     const loadInitialData = async () => {
         try {
-            // Добавляем заголовки авторизации
-            const headers = {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            };
-    
-            // Загрузка продуктов с базовой информацией
-            const productsRes = await fetch(CONFIG.PRODUCTS_DATA_URL, { headers });
-            if (!productsRes.ok) throw new Error(`HTTP ${productsRes.status} - Products load failed`);
+            const [productsRes, categoriesRes] = await Promise.all([
+                fetch(CONFIG.PRODUCTS_DATA_URL),
+                fetch(CONFIG.CATEGORIES_DATA_URL)
+            ]);
+
             const productsData = await productsRes.json();
-    
-            // Параллельная загрузка вариантов для всех продуктов
-            const productsWithVariants = await Promise.all(
-                productsData.map(async product => {
-                    try {
-                        const variantsRes = await fetch(
-                            `${CONFIG.PRODUCTS_DATA_URL}/${product.id}/variants`,
-                            { headers }
-                        );
-                        
-                        if (!variantsRes.ok) return { ...product, variants: [] };
-                        
-                        const variants = await variantsRes.json();
-                        return {
-                            ...product,
-                            variants: variants.map(v => ({
-                                id: v.variant_id,
-                                weight: parseFloat(v.weight),
-                                price: parseFloat(v.price),
-                                productId: v.product_id
-                            }))
-                        };
-                    } catch (e) {
-                        console.error(`Error loading variants for product ${product.id}:`, e);
-                        return { ...product, variants: [] };
-                    }
-                })
-            );
-    
-            // Загрузка категорий
-            const categoriesRes = await fetch(CONFIG.CATEGORIES_DATA_URL, { headers });
-            if (!categoriesRes.ok) throw new Error(`HTTP ${categoriesRes.status} - Categories load failed`);
             const categoriesData = await categoriesRes.json();
-    
-            // Обновление состояния с валидацией
-            state.products = productsWithVariants.filter(p => 
-                p.id && p.title && p.category_id && !isNaN(p.rating)
-            );
-            
-            state.flatCategories = categoriesData.filter(c => 
-                c.id && c.name && (c.parent_id === null || typeof c.parent_id === 'number')
-            );
-            
+
+            state.products = transformProducts(productsData.rows);
+            state.flatCategories = flattenCategories(categoriesData.categories);
             state.categories = buildCategoryTree(state.flatCategories);
-    
+
         } catch (error) {
-            console.error('Initial data loading failed:', error);
-            showError(`Critical error: ${error.message}`);
-            throw error;
+            console.error('Ошибка загрузки данных:', error);
+            alert('Не удалось загрузить данные');
         }
     };
-    const transformProducts = (products) => {
-        return products.map(product => ({
-            id: product.id,
-            title: product.title,
-            categoryId: product.category_id,
-            brand: product.brand,
-            ageGroup: product.age_group,
-            sizeGroup: product.size_group,
-            rating: product.rating,
-            image: product.image_url,
-            description: product.description,
-            sku: product.sku,
-            variants: product.variants || []
+    // Преобразование продуктов
+    const transformProducts = (rows) => {
+        return rows.map(row => ({
+            id: row[0],
+            name: row[1],
+            categoryId: row[2],
+            price: row[3],
+            rating: row[4],
+            image: row[5],
+            description: row[6] || '',
+            sku: row[7] || '',
+            specifications: row[8] || {},
+            weights: row[9] || []
         }));
     };
-    
+    // Построение дерева категорий
     const buildCategoryTree = (categories, parentId = null) => {
         return categories
             .filter(category => category.parent_id === parentId)
@@ -552,744 +529,612 @@ document.addEventListener('DOMContentLoaded', () => {
                 subcategories: buildCategoryTree(categories, category.id)
             }));
     };
-    
+    // Преобразование в плоский список с уровнями
     const flattenCategories = (categories, level = 0, parentId = null) => {
         return categories.reduce((acc, category) => {
-            acc.push({
-                id: category.id,
-                name: category.name,
-                parent_id: parentId,
-                level
-            });
-            
-            if (category.subcategories && category.subcategories.length > 0) {
+            const newCategory = { 
+                ...category, 
+                level,
+                parent_id: parentId
+            };
+            acc.push(newCategory);
+            if (category.subcategories) {
                 acc = acc.concat(flattenCategories(
-                    category.subcategories,
-                    level + 1,
+                    category.subcategories, 
+                    level + 1, 
                     category.id
                 ));
             }
             return acc;
         }, []);
     };
-    
+    // Обновление селектов категорий
     const updateCategorySelects = () => {
         const options = state.flatCategories.map(category => 
             `<option value="${category.id}">${'&nbsp;&nbsp;'.repeat(category.level)}${category.name}</option>`
         ).join('');
-        
         DOM.categoryParentSelect.innerHTML = 
             `<option value="">Основная категория</option>${options}`;
         DOM.productCategorySelect.innerHTML = options;
     };
-    
+    // Добавление категории
     const handleCategorySubmit = async (e) => {
         e.preventDefault();
         if (!checkAdminAccess()) {
-            alert('Доступ запрещен!');
-            window.location.href = '/login.html';
+            alert('Доступ запрещен! Недостаточно прав для выполнения операции');
+            window.location.href = '/index.html';
             return;
         }
     
-        const formData = new FormData(e.target);
-        const categoryData = {
-            name: formData.get('name').trim(),
-            parent_id: formData.get('parent') || null
-        };
+        const form = e.target;
+        const formData = new FormData(form);
+        const categoryName = formData.get('name').trim();
+        const parentRaw = formData.get('parent');
+        const parentCategoryId = parentRaw ? parseInt(parentRaw, 10) : null;
+        const imageFile = formData.get('image');
+    
+        if (!categoryName) {
+            alert('Пожалуйста, введите название категории');
+            form.name.focus();
+            return;
+        }
     
         try {
-            const response = await fetch(CONFIG.CATEGORIES_DATA_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify(categoryData)
-            });
+            // Загрузка текущих категорий
+            const resp = await fetch(CONFIG.CATEGORIES_DATA_URL);
+            if (!resp.ok) throw new Error('Ошибка загрузки категорий');
+            const data = await resp.json();
     
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message);
+            // Преобразование в плоский список
+            const currentFlatCategories = flattenCategories(data.categories || []);
+    
+            // Проверка на дубликат
+            const isDuplicate = currentFlatCategories.some(c =>
+                c.name.toLowerCase() === categoryName.toLowerCase() &&
+                c.parent_id === parentCategoryId
+            );
+            if (isDuplicate) throw new Error('Категория уже существует в этом разделе');
+    
+            let imagePath = '/images/categories/placeholder.png';
+            if (imageFile && imageFile.size > 0) {
+                const uploadResult = await uploadImage(imageFile, 'category');
+                if (uploadResult?.success) {
+                    imagePath = uploadResult.path;
+                }
+            }
+           
+            // Определение уровня
+            let level = 0;
+            if (parentCategoryId !== null) {
+                const parent = currentFlatCategories.find(c => c.id === parentCategoryId);
+                if (!parent) throw new Error('Родительская категория не найдена');
+                level = parent.level + 1;
             }
     
-            // Получаем актуальный список категорий после создания
-            const categoriesResponse = await fetch(CONFIG.CATEGORIES_DATA_URL);
-            if (!categoriesResponse.ok) throw new Error('Ошибка загрузки категорий');
-            const updatedCategories = await categoriesResponse.json();
-            
-            // Обновляем состояние
-            state.flatCategories = updatedCategories;
-            state.categories = buildCategoryTree(updatedCategories);
-            
+            // Создание новой категории
+            const newCategory = {
+                id: Date.now(),
+                name: categoryName,
+                parent_id: parentCategoryId,
+                image: imagePath,
+                level,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+    
+            // Обновление плоского списка
+            const updatedFlat = [...currentFlatCategories, newCategory];
+    
+            // Построение иерархии
+            const nestedCategories = buildCategoryTree(updatedFlat);
+    
+            // Сохранение
+            await saveData('categories.json', {
+                type: "hierarchical",
+                categories: nestedCategories
+            });
+    
+            // Обновление состояния
+            state.flatCategories = updatedFlat;
+            state.categories = nestedCategories;
             updateCategorySelects();
             renderCategories();
-            e.target.reset();
+            form.reset();
             showSuccessMessage('Категория успешно добавлена!');
     
         } catch (error) {
             console.error('Ошибка:', error);
             showError(error.message);
-        }
-    };
-                 // Рендер категорий
-                 const renderCategories = () => {
-                    const renderCategory = (category, level = 0) => `
-                        <div class="category-item" data-id="${category.id}">
-                            <div class="category-header" style="padding-left: ${level * 30}px">
-                                <span class="category-name">${category.name}</span>
-                                <button class="delete-button">Удалить</button>
-                            </div>
-                            ${category.subcategories?.map(sub => 
-                                renderCategory(sub, level + 1)
-                            ).join('') || ''}
-                        </div>
-                    `;
-                    DOM.categoryList.innerHTML = state.categories.map(category => 
-                        renderCategory(category)
-                    ).join('');
-                };
-                
-                const handleDelete = async (e) => {
-                    if (!checkAdminAccess()) {
-                        alert('Доступ запрещен!');
-                        window.location.reload();
-                        return;
-                    }
-                    
-                    if (!e.target.classList.contains('delete-button')) return;
-                
-                    // Удаление категории
-                    const categoryItem = e.target.closest('.category-item');
-                    if (categoryItem) {
-                        const categoryId = parseInt(categoryItem.dataset.id);
-                        if (!confirm('Удалить категорию и все подкатегории?')) return;
-                        
-                        try {
-                            // Получаем все ID для удаления
-                            const idsToRemove = getCategoryChildrenIds(categoryId);
-                            
-                            // Удаляем категории через API
-                            await Promise.all(idsToRemove.map(id => 
-                                fetch(`${CONFIG.СATEGORIES_DATA_URL}/${id}`, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                                    }
-                                }).then(res => {
-                                    if (!res.ok) throw new Error('Ошибка удаления категории');
-                                })
-                            ));
-                
-                            // Обновляем данные после удаления
-                            const [categoriesRes, productsRes] = await Promise.all([
-                                fetch(CONFIG.CATEGORIES_DATA_URL),
-                                fetch(CONFIG.PRODUCTS_DATA_URL)
-                            ]);
-                            
-                            const [updatedCategories, updatedProducts] = await Promise.all([
-                                categoriesRes.json(),
-                                productsRes.json()
-                            ]);
-                
-                            // Обновляем состояние
-                            state.flatCategories = updatedCategories;
-                            state.categories = buildCategoryTree(updatedCategories);
-                            state.products = transformProducts(updatedProducts);
-                
-                            renderAll();
-                            updateCategorySelects();
-                            
-                        } catch (error) {
-                            console.error('Ошибка:', error);
-                            showError(error.message);
-                        }
-                        return;
-                    }
-                
-                    // Удаление товара
-                    const productRow = e.target.closest('.product-item');
-                    if (productRow) {
-                        const productId = parseInt(productRow.dataset.id);
-                        if (!confirm('Удалить товар?')) return;
-                        
-                        try {
-                            const response = await fetch(`${CONFIG.PRODUCTS_DATA_URL}/${productId}`, {
-                                method: 'DELETE',
-                                headers: {
-                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                                }
-                            });
-                
-                            if (!response.ok) {
-                                const error = await response.json();
-                                throw new Error(error.message);
-                            }
-                
-                            // Обновляем список товаров
-                            const productsRes = await fetch(CONFIG.PRODUCTS_DATA_URL);
-                            const updatedProducts = await productsRes.json();
-                            state.products = transformProducts(updatedProducts);
-                            
-                            renderProducts();
-                            
-                        } catch (error) {
-                            console.error('Ошибка:', error);
-                            showError(error.message);
-                        }
-                    }
-                };
-
-    // Получение ID всех потомков
-const getCategoryChildrenIds = (parentId) => {
-    const children = state.flatCategories.filter(c => c.parent_id === parentId);
-    return children.reduce((acc, child) => {
-        acc.push(child.id);
-        acc.push(...getCategoryChildrenIds(child.id));
-        return acc;
-    }, [parentId]);
-};
-
-const showError = (message) => {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-message';
-    errorDiv.textContent = message;
-    document.body.appendChild(errorDiv);
-    setTimeout(() => errorDiv.remove(), 3000);
-};
-
-const showSuccessMessage = (message) => {
-    const successDiv = document.createElement('div');
-    successDiv.className = 'success-message';
-    successDiv.textContent = message;
-    document.body.appendChild(successDiv);
-    setTimeout(() => successDiv.remove(), 3000);
-};
-
-// Добавление товара
-const handleProductSubmit = async (e) => {
-    e.preventDefault();
-    if (!checkAdminAccess()) {
-        alert('Доступ запрещен! Недостаточно прав для выполнения операции');
-        window.location.href = '/index.html';
-        return;
-    }
-    
-    const form = e.target;
-    const formData = new FormData(form);
-    
-    try {
-        // Валидация основных полей
-        const requiredFields = {
-            title: formData.get('title').trim(),
-            category_id: formData.get('category'),
-            image: formData.get('image')
-        };
-
-        // Проверка обязательных полей
-        if (!requiredFields.title) {
-            alert('Введите название товара');
-            form.title.focus();
-            return;
-        }
-        if (!requiredFields.category_id || isNaN(requiredFields.category_id)) {
-            alert('Выберите категорию');
-            form.category.focus();
-            return;
-        }
-        if (!requiredFields.image?.name) {
-            alert('Загрузите изображение товара');
-            form.image.focus();
-            return;
-        }
-
-        // Проверка существования категории
-        const categoryExists = state.flatCategories.some(
-            c => c.id === parseInt(requiredFields.category_id)
-        );
-        if (!categoryExists) {
-            alert('Выбранная категория не существует');
-            return;
-        }
-
-        // Сбор данных для API
-        const productData = new FormData();
-        productData.append('title', requiredFields.title);
-        productData.append('category_id', requiredFields.category_id);
-        productData.append('image', requiredFields.image);
-        
-        // Опциональные поля
-        const optionalFields = [
-            'brand', 'age_group', 'size_group', 
-            'description', 'sku', 'rating'
-        ];
-        
-        optionalFields.forEach(field => {
-            const value = formData.get(field);
-            if (value) productData.append(field, value);
-        });
-
-        // Варианты товара
-        const variants = formData.get('variants');
-        if (variants) {
             try {
-                JSON.parse(variants);
-                productData.append('variants', variants);
-            } catch (error) {
-                alert('Ошибка в формате вариантов! Используйте JSON');
-                form.variants.focus();
-                return;
+                await loadInitialData();
+                renderCategories();
+            } catch (reloadError) {
+                console.error('Ошибка восстановления:', reloadError);
+                showError('Критическая ошибка! Перезагрузите страницу');
             }
         }
-
-        // Отправка данных
-        const response = await fetch(CONFIG.PRODUCTS_DATA_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: productData
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Ошибка сервера');
+    }; 
+             // Рендер категорий
+             const renderCategories = () => {
+                const renderCategory = (category, level = 0) => {
+                  console.log('Rendering category:', category); // <-- Добавить эту строку
+                  return `
+                    <div class="category-item" data-id="${category.id}">
+                      <div class="category-header" style="padding-left: ${level * 30}px">
+                        <img src="${category.image}" 
+                             class="category-icon" 
+                             alt="${category.name}"
+                             onerror="console.error('Image load failed:', this.src)">
+                        <span class="category-name">${category.name}</span>
+                        <button class="delete-button">Удалить</button>
+                      </div>
+                      ${category.subcategories?.map(sub => renderCategory(sub, level + 1)).join('')}
+                    </div>
+                  `;
+                };
+                
+                DOM.categoryList.innerHTML = state.categories.map(renderCategory).join('');
+              };
+    const handleDelete = async (e) => {
+        if (!checkAdminAccess()) {
+            alert('Доступ запрещен!');
+            window.location.reload();
+            return;
+          }
+        if (!e.target.classList.contains('delete-button')) return;
+        // Удаление категории
+        const categoryItem = e.target.closest('.category-item');
+        if (categoryItem) {
+            const categoryId = parseInt(categoryItem.dataset.id);
+            if (!confirm('Удалить категорию и все подкатегории?')) return;
+            const idsToRemove = getCategoryChildrenIds(categoryId);
+            state.flatCategories = state.flatCategories.filter(c => 
+                !idsToRemove.includes(c.id)
+            );
+            state.categories = buildCategoryTree(state.flatCategories);
+            state.products = state.products.filter(p => 
+                !idsToRemove.includes(p.categoryId)
+            );
+            // Сохраняем изменения
+            await Promise.all([
+                saveData('categories.json', { 
+                    type: "hierarchical", 
+                    categories: state.categories 
+                }),
+                saveData('products.json', {
+                    type: "query results",
+                    columns: [],
+                    rows: state.products.map(p => [
+                        p.id,
+                        p.name,
+                        p.categoryId,
+                        p.price,
+                        p.rating || 0,
+                        p.image.split('/').pop()
+                    ])
+                })
+            ]);
+            renderAll();
+            updateCategorySelects();
+            return; // Важно: прерываем выполнение после удаления категории
         }
-
-        // Обновление списка товаров
-        const productsRes = await fetch(CONFIG.PRODUCTS_DATA_URL);
-        const updatedProducts = await productsRes.json();
-        state.products = transformProducts(updatedProducts);
-        
-        form.reset();
-        showSuccessMessage('Товар успешно добавлен!');
-        renderProducts();
-
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showError(error.message);
-    }
-
-                // Обработка вариантов товара
-const variantsInput = formData.get('variants');
-let variants = [];
-try {
-    if (variantsInput) {
-        variants = JSON.parse(variantsInput);
-        if (!Array.isArray(variants)) {
-            throw new Error('Варианты должны быть массивом');
+        // Удаление товара
+        const productRow = e.target.closest('.product-item');
+        if (productRow) {
+            const productId = parseInt(productRow.dataset.id);
+            if (!confirm('Удалить товар?')) return;
+            state.products = state.products.filter(p => p.id !== productId);
+            // Сохраняем изменения
+            await saveData('products.json', {
+                type: "query results",
+                columns: [],
+                rows: state.products.map(p => [
+                    p.id,
+                    p.name,
+                    p.categoryId,
+                    p.price,
+                    p.rating || 0,
+                    p.image.split('/').pop()
+                ])
+            });
+            renderProducts();
         }
-    }
-} catch (error) {
-    alert('Ошибка в формате вариантов! Используйте JSON-массив объектов с weight и price');
-    form.variants.focus();
-    return;
-}
-
-// Проверка наличия вариантов
-if (variants.length === 0) {
-    // Создаем вариант по умолчанию если нет ввода
-    variants.push({ weight: 1, price: parseFloat(formData.get('price')) });
-}
-
-// Создание объекта товара для API
-const productData = {
-    title: formData.get('title').trim(),
-    category_id: parseInt(formData.get('category')),
-    description: formData.get('description').trim() || null,
-    sku: formData.get('sku').trim() || null,
-    brand: formData.get('brand').trim() || null,
-    age_group: formData.get('age_group').trim() || null,
-    size_group: formData.get('size_group').trim() || null,
-    rating: formData.get('rating') ? parseFloat(formData.get('rating')) : null,
-    variants: variants.map(v => ({
-        weight: parseFloat(v.weight),
-        price: parseFloat(v.price)
-    }))
-};
-
-try {
-    // Отправка данных через FormData для поддержки файлов
-    const formPayload = new FormData();
-    formPayload.append('data', JSON.stringify(productData));
-    
-    const imageFile = formData.get('image');
-    if (imageFile) {
-        formPayload.append('image', imageFile);
-    }
-
-    const response = await fetch(CONFIG.PRODUCTS_DATA_URL, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formPayload
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json();
-        // Обработка ошибок дубликатов из сервера
-        if (errorData.error.includes('sku')) {
-            throw new Error('Товар с таким артикулом уже существует');
+    };
+    // Получение ID всех потомков
+    const getCategoryChildrenIds = (parentId) => {
+        const children = state.flatCategories.filter(c => c.parent_id === parentId);
+        return children.reduce((acc, child) => {
+            acc.push(child.id);
+            acc.push(...getCategoryChildrenIds(child.id));
+            return acc;
+        }, [parentId]);
+    };
+    const saveData = async (filename, data) => {
+        try {
+            const response = await fetch(CONFIG.SAVE_DATA_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, data })
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('Save error:', error);
+            showError('Ошибка сохранения данных');
+            throw error;
         }
-        throw new Error(errorData.error || 'Ошибка сохранения товара');
-    }
+    };
+      const showError = (message) => {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        document.body.appendChild(errorDiv);
+        setTimeout(() => errorDiv.remove(), 3000);
+      };
 
-    // Успешное создание - обновляем данные
-    const [productsRes, categoriesRes] = await Promise.all([
-        fetch(CONFIG.PRODUCTS_DATA_URL),
-        fetch(CONFIG.CATEGORIES_DATA_URL)
-    ]);
-    
-    const [productsData, categoriesData] = await Promise.all([
-        productsRes.json(),
-        categoriesRes.json()
-    ]);
+        const showSuccessMessage = (message) => {
+        const successDiv = document.createElement('div');
+        successDiv.className = 'success-message';
+        successDiv.textContent = message;
+        document.body.appendChild(successDiv);
+        setTimeout(() => successDiv.remove(), 3000);
+        };
 
-    // Обновление глобального состояния
-    state.products = transformProducts(productsData);
-    state.flatCategories = categoriesData;
-    state.categories = buildCategoryTree(categoriesData);
-
-    // Обновление интерфейса
-    renderProducts();
-    updateCategorySelects();
-    
-    // Сброс формы и уведомление
-    form.reset();
-    showSuccessMessage('Товар успешно добавлен!');
-
-} catch (error) {
-    console.error('Ошибка при добавлении товара:', error);
-    showError(error.message);
-    
-    // Восстановление данных с сервера при ошибке
-    try {
-        const [productsRes, categoriesRes] = await Promise.all([
-            fetch(CONFIG.PRODUCTS_DATA_URL),
-            fetch(CONFIG.CATEGORIES_DATA_URL)
-        ]);
-        
-        state.products = transformProducts(await productsRes.json());
-        state.flatCategories = await categoriesRes.json();
-        state.categories = buildCategoryTree(state.flatCategories);
-        
-        renderProducts();
-    } catch (reloadError) {
-        console.error('Ошибка восстановления данных:', reloadError);
-        showError('Ошибка синхронизации данных. Обновите страницу');
-    }
-}
+        // Добавление товара
+        const handleProductSubmit = async (e) => {
+            e.preventDefault();
+            // Проверка прав администратора
+            if (!checkAdminAccess()) {
+                alert('Доступ запрещен! Недостаточно прав для выполнения операции');
+                window.location.href = '/index.html';
+                return;
+            }
+            const form = e.target;
+            const formData = new FormData(form);
+            try {
+                // Валидация основных полей
+                const requiredFields = {
+                    name: formData.get('name').trim(),
+                    price: formData.get('price'),
+                    category: formData.get('category'),
+                    image: formData.get('image')
+                };
+                // Проверка заполнения обязательных полей
+                if (!requiredFields.name) {
+                    alert('Введите название товара');
+                    form.name.focus();
+                    return;
+                }
+                if (!requiredFields.price || isNaN(requiredFields.price)) {
+                    alert('Укажите корректную цену');
+                    form.price.focus();
+                    return;
+                }
+                if (!requiredFields.category || isNaN(requiredFields.category)) {
+                    alert('Выберите категорию');
+                    form.category.focus();
+                    return;
+                }
+                if (!requiredFields.image || requiredFields.image.size === 0) {
+                    alert('Загрузите изображение товара');
+                    form.image.focus();
+                    return;
+                }
+                // Проверка существования категории
+                const categoryExists = state.flatCategories.some(
+                    c => c.id === parseInt(requiredFields.category)
+                );
+                if (!categoryExists) {
+                    alert('Выбранная категория не существует');
+                    return;
+                }
+                // Загрузка изображения
+                const uploadResult = await uploadImage(requiredFields.image);
+                if (!uploadResult?.success || !uploadResult.path) {
+                    throw new Error('Ошибка загрузки изображения');
+                }
+                // Обработка характеристик
+                let specifications = {};
+                const specsInput = formData.get('specifications').trim();
+                if (specsInput) {
+                    try {
+                        specifications = JSON.parse(specsInput);
+                    } catch (error) {
+                        alert('Ошибка в формате характеристик! Используйте JSON');
+                        form.specifications.focus();
+                        return;
+                    }
+                }
+                // Обработка весов
+                const weights = formData.get('weights')
+                    .split(',')
+                    .map(w => parseFloat(w.trim()))
+                    .filter(w => !isNaN(w) && w > 0);
+                    // В handleProductSubmit
+                const price = Number(formData.get('price'));
+                if (Number.isNaN(price) || price <= 0) {
+                    showError('Некорректная цена');
+                    return;
+                }
+                // Создание объекта товара
+                const newProduct = {
+                    id: Date.now(),
+                    name: requiredFields.name,
+                    categoryId: parseInt(requiredFields.category),
+                    price: parseFloat(requiredFields.price),
+                    image: uploadResult.path,
+                    description: formData.get('description').trim(),
+                    sku: formData.get('sku').trim(),
+                    specifications,
+                    weights: weights.length > 0 ? weights : [1], // Значение по умолчанию
+                    rating: 0,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+                // Проверка на дубликаты
+                const isDuplicate = state.products.some(p => 
+                    p.sku && p.sku === newProduct.sku || 
+                    p.name.toLowerCase() === newProduct.name.toLowerCase()
+                );
+                if (isDuplicate) {
+                    alert('Товар с таким названием или артикулом уже существует');
+                    return;
+                }
+                // Обновление состояния
+                const updatedProducts = [...state.products, newProduct];
+                // Сохранение данных
+                const saveResult = await saveData('products.json', {
+                    type: "query results",
+                    columns: [],
+                    rows: updatedProducts.map(p => [
+                        p.id,
+                        p.name,
+                        p.categoryId,
+                        p.price,
+                        p.rating,
+                        p.image.split('/').pop(),
+                        p.description,
+                        p.sku,
+                        p.specifications,
+                        p.weights
+                    ])
+                });
+                if (!saveResult || !saveResult.success) {
+                    throw new Error(saveResult?.error || 'Ошибка сохранения товара');
+                }
+                // Обновление глобального состояния
+                state.products = updatedProducts;
+                // Обновление интерфейса
+                renderProducts();
+                // Сброс формы и уведомление
+                form.reset();
+                showSuccessMessage('Товар успешно добавлен!');
+            } catch (error) {
+                console.error('Ошибка при добавлении товара:', error);
+                showError(`Ошибка: ${error.message}`);
+                // Восстановление предыдущих данных
+                try {
+                    await loadInitialData();
+                    renderProducts();
+                } catch (reloadError) {
+                    console.error('Ошибка восстановления данных:', reloadError);
+                    showError('Критическая ошибка! Перезагрузите страницу');
+                }
+            }
+        };
 ///////////////////////////////////////////////
     // Поиск товаров
-    const handleSearch = async (e) => {
+    const handleSearch = (e) => {
         const term = e.target.value.toLowerCase();
-        try {
-            const response = await fetch(`${CONFIG.PRODUCTS_DATA_URL}?search=${encodeURIComponent(term)}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Ошибка поиска');
-            const filteredProducts = await response.json();
-            renderProducts(filteredProducts);
-        } catch (error) {
-            console.error('Ошибка поиска:', error);
-            showError('Ошибка при выполнении поиска');
-        }
+        const filtered = state.products.filter(product => 
+            product.name.toLowerCase().includes(term)
+        );
+        renderProducts(filtered);
     };
-    
+    // Рендер товаров
     const renderProducts = (products = state.products) => {
-        const sanitize = (str) => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        
-        DOM.productTableBody.innerHTML = products.map(product => {
-            const category = state.flatCategories.find(c => c.id === product.category_id);
-            const variantsInfo = product.variants.map(v => 
-                `${v.weight} кг - ${v.price.toFixed(2)} ₽`
-            ).join('<br>');
-    
-            return `
-            <tr class="product-item" data-id="${product.id}">
-                <td>${product.id}</td>
-                <td>
-                    <img src="${product.image_url || '/images/placeholder.png'}" 
-                         class="product-thumb" 
-                         alt="${sanitize(product.title)}">
-                </td>
-                <td>${sanitize(product.title)}</td>
-                <td>${product.sku || '—'}</td>
-                <td>${category?.name || 'Без категории'}</td>
-                <td>${variantsInfo || '—'}</td>
-                <td>
-                    ${product.brand ? `Бренд: ${product.brand}<br>` : ''}
-                    ${product.age_group ? `Возраст: ${product.age_group}<br>` : ''}
-                    ${product.size_group ? `Размер: ${product.size_group}` : ''}
-                </td>
-                <td><button class="delete-button">Удалить</button></td>
-            </tr>
-            `;
-        }).join('');
-    };
-    
+    // В функции renderProducts()
+// … внутри renderProducts …
+    const sanitize = (str) => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    DOM.productTableBody.innerHTML = products.map(product => {
+        const safeName = sanitize(product.name);
+    const category = state.flatCategories.find(c => c.id === product.categoryId);
+    const specsKeys = Object.keys(product.specifications);
+    const specsValues = Object.values(product.specifications);
+    // Построим <table> для specs
+    const specsTable = specsKeys.length
+      ? `
+      <table class="nested-specs-table">
+        <thead>
+          <tr>
+            ${specsKeys.map(key => `<th>${key}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            ${specsValues.map(val => `<td>${val}</td>`).join('')}
+          </tr>
+        </tbody>
+      </table>`
+      : '<span>—</span>';
+
+    return `
+      <tr class="product-item" data-id="${product.id}">
+        <td>${product.id}</td>
+        <td>
+          <img src="/images/${product.image}"
+               class="product-thumb"
+               alt="${product.name}"
+               onerror="this.src='/images/placeholder.png'">
+        </td>
+        <td>${product.name}</td>
+        <td>${product.sku}</td>
+        <td>${category?.name || 'Без категории'}</td>
+        <td>${product.price.toFixed(2)} ₽</td>
+        <td>${specsTable}</td>
+        <td><button class="delete-button">Удалить</button></td>
+      </tr>
+    `;
+}).join('');
+};
+    // ДОБАВИТЬ ПЕРЕД ФУНКЦИЕЙ setupEventListeners
     const handleReviewAction = async (action, reviewId) => {
         if (!checkAdminAccess()) {
             showError('Доступ запрещен!');
             return;
         }
-    
+        // Создаем копии для безопасного изменения
+        let pending = [...state.pendingReviews];
+        let approved = [...state.approvedReviews];
+        let originalPending = [...state.pendingReviews];
+        let originalApproved = [...state.approvedReviews];
         try {
-            const reviewType = state.pendingReviews.some(r => r.id === reviewId) ? 'pending' : 'approved';
-            
-            if (action === 'delete' && !confirm('Удалить отзыв безвозвратно?')) return;
-    
-            let response;
+            // Находим отзыв без мутации исходных данных
+            const reviewIndex = pending.findIndex(r => r.id === reviewId);
+            const isPending = reviewIndex > -1;
+            const review = isPending 
+                ? pending[reviewIndex] 
+                : approved.find(r => r.id === reviewId);
+            if (!review) {
+                throw new Error('Отзыв не найден');
+            }
+            // Подтверждение для деструктивных действий
+            if (action === 'delete' && !confirm('Удалить отзыв безвозвратно?')) {
+                return;
+            }
+            // Обработка действий
             switch(action) {
                 case 'approve':
-                    response = await fetch(`/api/reviews/${reviewId}/approve`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
-                    });
+                    if (!isPending) {
+                        throw new Error('Отзыв уже одобрен');
+                    }
+                    // Создаем новый объект вместо мутации
+                    const approvedReview = {
+                        ...review,
+                        approved_at: new Date().toISOString()
+                    };
+                    pending = pending.filter(r => r.id !== reviewId);
+                    approved = [...approved, approvedReview];
                     break;
-                    
                 case 'delete':
-                    response = await fetch(`/api/reviews/${reviewType}/${reviewId}`, {
-                        method: 'DELETE',
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
-                    });
+                    if (isPending) {
+                        pending = pending.filter(r => r.id !== reviewId);
+                    } else {
+                        approved = approved.filter(r => r.id !== reviewId);
+                    }
                     break;
-                    
                 default:
-                    throw new Error('Неизвестное действие');
+                    throw new Error(`Неизвестное действие: ${action}`);
             }
-    
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Ошибка операции');
+            // Атомарное обновление состояния
+            state.pendingReviews = pending;
+            state.approvedReviews = approved;
+            // Пакетное сохранение через отдельные запросы
+            const saveRequests = [
+                saveData('pending-reviews.json', pending),
+                saveData('approved-reviews.json', approved)
+            ];
+            const results = await Promise.all(saveRequests);
+            // Проверка результатов сохранения
+            if (results.some(res => !res?.success)) {
+                throw new Error('Ошибка синхронизации данных');
             }
-    
-            // Обновляем данные с сервера
-            const [pendingRes, approvedRes] = await Promise.all([
-                fetch('/api/reviews/pending'),
-                fetch('/api/reviews/approved')
-            ]);
-            
-            state.pendingReviews = await pendingRes.json();
-            state.approvedReviews = await approvedRes.json();
-            
+            // Обновление UI только после успешного сохранения
             renderReviews();
-    
         } catch (error) {
-            console.error('Ошибка:', error);
-            showError(error.message);
+            console.error('Ошибка действия:', error);
+            // Восстановление исходного состояния при ошибках
+            state.pendingReviews = originalPending;
+            state.approvedReviews = originalApproved;
+            renderReviews();
+            showError(`${error.message} (изменения отменены)`);
         }
-    };       // Обновление состояния отзывов через API
-    state.pendingReviews = pending;
-    state.approvedReviews = approved;
-    
-    try {
-        // Для approve: отправка PUT запроса
-        if (action === 'approve') {
-            const response = await fetch(`/api/reviews/${reviewId}/approve`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Ошибка одобрения отзыва');
-        }
-        
-        // Для delete: отправка DELETE запроса
-        if (action === 'delete') {
-            const type = originalPending.some(r => r.id === reviewId) ? 'pending' : 'approved';
-            const response = await fetch(`/api/reviews/${type}/${reviewId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Ошибка удаления отзыва');
-        }
-    
-        // Обновление данных после успешного запроса
-        const [pendingRes, approvedRes] = await Promise.all([
-            fetch('/api/reviews/pending'),
-            fetch('/api/reviews/approved')
-        ]);
-        
-        state.pendingReviews = await pendingRes.json();
-        state.approvedReviews = await approvedRes.json();
-        
-        renderReviews();
-    } catch (error) {
-        console.error('Ошибка:', error);
-        // Восстановление состояния через API при ошибке
-        const [pendingRes, approvedRes] = await Promise.all([
-            fetch('/api/reviews/pending'),
-            fetch('/api/reviews/approved')
-        ]);
-        
-        state.pendingReviews = await pendingRes.json();
-        state.approvedReviews = await approvedRes.json();
-        
-        renderReviews();
-        showError(`${error.message} (изменения отменены)`);
-    }
-    
-    const setupReviewEventListeners = () => {
-        DOM.reviewsSection.addEventListener('click', async (e) => {
-            const button = e.target.closest('[data-action]');
-            if (!button) return;
-            
-            const card = button.closest('.review-card');
-            const reviewId = parseInt(card.dataset.id);
-            const action = button.dataset.action;
-            
-            await handleReviewAction(action, reviewId);
-        });
     };
-    
+  const setupReviewEventListeners = () => {
+    DOM.reviewsSection.addEventListener('click', async (e) => {
+      const button = e.target.closest('[data-action]');
+      if (!button) return;
+      const card = button.closest('.review-card');
+      const reviewId = parseInt(card.dataset.id);
+      const action = button.dataset.action;
+      await handleReviewAction(action, reviewId);
+    });
+  };
+    // Настройка обработчиков
     const setupEventListeners = () => {
         DOM.tabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
         DOM.categoryForm.addEventListener('submit', handleCategorySubmit);
         DOM.productForm.addEventListener('submit', handleProductSubmit);
         DOM.searchInput.addEventListener('input', handleSearch);
         document.addEventListener('click', handleDelete);
-    
-        // Обработчик отправки отзывов
         const reviewForm = document.getElementById('reviewForm');
         if (reviewForm) {
             reviewForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
-                
-                try {
-                    const response = await fetch('/api/reviews', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify({
-                            author_name: formData.get('name'),
-                            email: formData.get('email'),
-                            phone: formData.get('phone'),
-                            rating: parseInt(formData.get('rating')),
-                            comment: formData.get('content'),
-                            product_id: parseInt(formData.get('product_id')) // Добавлен product_id
-                        })
-                    });
-    
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.error || 'Ошибка отправки отзыва');
-                    }
-    
+                const reviewData = {
+                    author: formData.get('name'),
+                    email: formData.get('email'),
+                    phone: formData.get('phone'),
+                    rating: parseInt(formData.get('rating')),
+                    content: formData.get('content')
+                };
+                if (await saveReview(reviewData)) {
                     alert('Отзыв успешно отправлен на модерацию!');
                     e.target.reset();
-                } catch (error) {
-                    console.error('Ошибка:', error);
-                    alert(error.message);
+                } else {
+                    alert('Ошибка при отправке отзыва');
                 }
             });
         }
-        setupReviewEventListeners();
+        setupReviewEventListeners(); // Обработчики для админ-панели отзывов
     };
-    
-    const handleTabSwitch = async (e) => {
-        const tab = e.target;
-        if (!tab?.dataset.tab) return;
-    
-        DOM.tabs.forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.admin-section').forEach(section => {
-            section.classList.remove('active');
-        });
-    
-        tab.classList.add('active');
-        state.currentTab = tab.dataset.tab;
-        
-        const activeSection = document.getElementById(`${state.currentTab}-section`);
-        if (activeSection) {
-            activeSection.classList.add('active');
-    
-            switch(state.currentTab) {
-                case 'full':
-                case 'quick-orders':
-                    try {
-                        const endpoint = state.currentTab === 'full' 
-                            ? '/api/orders' 
-                            : '/api/quick-orders';
-                        
-                        const response = await fetch(endpoint, {
-                            headers: {
-                                'Authorization': `Bearer ${localStorage.getItem('token')}`
-                            }
-                        });
-                        
-                        if (!response.ok) throw new Error('Ошибка загрузки заказов');
-                        const orders = await response.json();
-                        
-                        renderOrdersSection(state.currentTab, orders);
-                    } catch (error) {
-                        console.error('Ошибка:', error);
-                        showError('Ошибка загрузки заказов');
-                    }
-                    break;
-                    
-                case 'reviews':
-                    try {
-                        const [pendingRes, approvedRes] = await Promise.all([
-                            fetch('/api/reviews/pending'),
-                            fetch('/api/reviews/approved')
-                        ]);
-                        
-                        state.pendingReviews = await pendingRes.json();
-                        state.approvedReviews = await approvedRes.json();
-                        
-                        renderReviews();
-                    } catch (error) {
-                        console.error('Ошибка:', error);
-                        showError('Ошибка загрузки отзывов');
-                    }
-                    break;
-            }
-        }
-    };
-    
+    // Переключение вкладок
+    // ЗАМЕНИТЬ существующую функцию на эту:
+const handleTabSwitch = (e) => {
+    const tab = e.target;
+    if (!tab || !tab.dataset.tab) return;
+    // Снять активное состояние со всех вкладок
+    DOM.tabs.forEach(t => t.classList.remove('active'));
+    // Скрыть все секции
+    document.querySelectorAll('.admin-section').forEach(section => {
+      section.classList.remove('active');
+    });
+    // Активировать выбранную вкладку
+    tab.classList.add('active');
+    state.currentTab = tab.dataset.tab;
+    // Показать соответствующую секцию
+    const activeSection = document.getElementById(`${state.currentTab}-section`);
+    if (activeSection) {
+      activeSection.classList.add('active');
+  
+      // Если это вкладка отзывов - обновить данные
+      switch(state.currentTab) {
+        case 'full':
+        case 'quick-orders':
+            loadOrders()
+                .then(() => renderOrdersSection(state.currentTab))
+                .catch(console.error);
+            break;
+        case 'reviews':
+            loadReviews().catch(console.error);
+            break;
+    }
+    }
+  };
+    // Общий рендер
     const renderAll = async () => {
-        try {
-            const [productsRes, categoriesRes, pendingRes, approvedRes, ordersRes, quickOrdersRes] = 
-                await Promise.all([
-                    fetch('/api/products'),
-                    fetch('/api/categories'),
-                    fetch('/api/reviews/pending'),
-                    fetch('/api/reviews/approved'),
-                    fetch('/api/orders'),
-                    fetch('/api/quick-orders')
-                ]);
+        renderCategories();
+        renderProducts();
+        await loadReviews();      // загружаем массив pending и approved
+        renderReviews();          // рендерим оба раздела
     
-            state.products = transformProducts(await productsRes.json());
-            state.flatCategories = await categoriesRes.json();
-            state.categories = buildCategoryTree(state.flatCategories);
-            state.pendingReviews = await pendingRes.json();
-            state.approvedReviews = await approvedRes.json();
-            state.orders = await ordersRes.json();
-            state.quickOrders = await quickOrdersRes.json();
-    
-            renderCategories();
-            renderProducts();
-            renderReviews();
-            renderOrdersSection('full', state.orders);
-            renderOrdersSection('quick', state.quickOrders);
-            
-        } catch (error) {
-            console.error('Ошибка инициализации:', error);
-            showError('Ошибка загрузки данных');
-        }
+        // --- заказы ---
+        renderOrdersSection('full');   // отображаем "полные" заказы
+        renderOrdersSection('quick');  // отображаем "быстрые" заказы
     };
-    
+
     init();
-}
-}); // ← Добавлено в самом конце файла
+});

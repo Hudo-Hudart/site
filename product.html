@@ -347,9 +347,47 @@
   </div>
 </footer>
 
+
+<!-- внизу product.html, вместо старого <script src="/data/products.js"> -->
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+          // допустим, у вас в URL ?id=123
+          const params = new URLSearchParams(window.location.search);
+          const id = params.get('id');
+          if (!id) {
+            showError('ID товара не указан');
+            return;
+          }
+        
+          try {
+            const res = await fetch(`/api/products/${id}`);
+            if (!res.ok) throw new Error('Не удалось загрузить товар');
+            const product = await res.json();
+            renderProductDetails(product);
+          } catch (e) {
+            console.error(e);
+            showError('Ошибка при загрузке товара');
+          }
+        });
+        
+        function renderProductDetails(p) {
+          // здесь ваша логика создания карточки / заполнения полей:
+          document.getElementById('product-title').textContent = p.title;
+          document.getElementById('product-image').src = p.image_url || '/images/placeholder.png';
+          // и так далее для описания, вариантов, цены, кнопок «в корзину» и т.п.
+        }
+        
+        function showError(msg) {
+          const err = document.getElementById('error-message');
+          err.textContent = msg;
+          err.style.display = 'block';
+        }
+        </script>
+        
+
     <script src="/js/main.js"></script>
     <script src="/js/catalog.js"></script>
     <script src="/js/cart.js"></script> <!-- Подключите ваш класс корзины -->
-    <script src="/data/products.js"></script>
+    <!--<script src="/data/products.js"></script>-->
 </body>
 </html>

@@ -17,6 +17,7 @@
                     </a>
                 </div>
         
+        
                 <!-- Центральный блок: Поиск + Преимущества -->
                 <div class="center-block">
                     <!-- Поисковая строка -->
@@ -65,40 +66,30 @@
                     </div>
         
                     <!-- Иконки действий -->
-<div class="header-icons">
-    <!-- Избранное -->
-    <div class="icon-dropdown favorites">
-      <div class="icon-block">
-        <img src="/images/heart.png" alt="Избранное">
-      </div>
-      <span class="counter">0</span>
-  
-      <div class="dropdown-content">
-        <!-- Шапка -->
-        <div class="dropdown-header">
-          <h4>Избранное <span class="header-count">(0)</span></h4>
-          <button class="clear-all">Очистить</button>
-        </div>
-  
-        <!-- Список товаров -->
-        <div class="items-list"><!-- сюда вставится list–item --></div>
-  
-        <!-- Пустое состояние -->
-        <div class="empty-message hidden">
-          <img src="/images/heart.png" alt="Избранное" class="empty-icon">
-          <span>В вашем избранном пока пусто</span>
-        </div>
-  
-        <!-- Футер с кнопкой перехода -->
-        <div class="dropdown-footer hidden">
-          <a href="/favorite.html" class="go-to-favorites">
-            Перейти к избранному
-          </a>
-        </div>
-      </div>
-    </div>
-  </div>
-  
+                    <div class="header-icons">
+                        <!-- Избранное -->
+                        <div class="icon-dropdown favorites">
+                            <div class="icon-block">
+                                <img src="/images/heart.png" alt="Избранное">
+                            </div>
+                            <span class="counter">0</span>
+                            <div class="dropdown-content">
+                                <div class="dropdown-header">
+                                    <h4>Избранное</h4>
+                                    <button class="clear-all">Очистить</button>
+                                </div>
+                                <div class="items-list"></div>
+                                    <div class="dropdown-footer hidden">
+                                    <a href="/favorite.html" class="go-to-favorites">
+                                        Перейти к избранному
+                                    </a>
+                                    </div>
+                           <!--    <div class="empty-message">
+                                    <img src="/images/heart.png" alt="Избранное" class="empty-icon">
+                                    <span>В вашем избранном пока пусто</span>
+                                </div> -->
+                            </div>
+                        </div>
                     
                         <!-- Сравнение -->
                         <div class="icon-dropdown compare">
@@ -121,22 +112,24 @@
                         <!-- Корзина -->
                         <div class="icon-dropdown cart">
                             <div class="icon-block">
-                                <img src="/images/cart.png" alt="Корзина">
+                            <img src="/images/cart.png" alt="Корзина">
                             </div>
-                            <span class="counter">0</span>
-                            <div class="dropdown-content">
-                                <div class="dropdown-header">
-                                    <h4>Ваша корзина</h4>
-                                    <button class="clear-all">Очистить</button>
+                                <span class="counter">0</span>
+                                <div class="dropdown-content">
+                                    <div class="dropdown-header">
+                                        <h4>Ваша корзина</h4>
+                                        <button class="clear-all">Очистить</button>
+                                    </div>
+
+                                     <!-- Контейнер для списка товаров -->
+                                    <div class="items-list"></div>
+                                    
+                                    <!-- Добавим иконку для пустой корзины -->
+                                    <div class="empty-message">
+                                        <img src="/images/cart.png" alt="Корзина" class="empty-icon">
+                                        <span>В вашей корзине пока пусто</span>
+                                    </div>
                                 </div>
-                                <!-- Контейнер для списка товаров в корзине -->
-                                <div class="items-list"></div>
-                                <!-- Иконка и сообщение для пустой корзины -->
-                                <div class="empty-message">
-                                    <img src="/images/cart.png" alt="Корзина" class="empty-icon">
-                                    <span>В вашей корзине пока пусто</span>
-                                </div>
-                            </div>
                         </div>
                     
                         <!-- Личный кабинет -->
@@ -163,85 +156,58 @@
                 </div>
             </div>
         </header>
-    <!-- Основная навигация -->
-    <nav class="main-nav">
-        <div class="nav-container">
-            <div class="catalog-dropdown">
-                <button class="catalog-btn">
-                    <div class="hamburger">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                      </div>
-                    <span>КАТАЛОГ</span>
-                </button>
-                <!-- Выпадающее меню будет здесь -->
-                <div class="catalog-menu">
-                    <div class="category-col">
-                        <div class="category-header compact">
-                            <img src="/images/cat.jpg" alt="Кошки" class="category-icon-small">
-                            <h3>ДЛЯ КОШЕК</h3>
-                        </div>
-                        <div class="subcategories-compact-grid">
-                            <a href="#">Корм для кошек</a>
-                            <a href="#">Сухой корм</a>
-                            <a href="#">Влажный корм</a>
-                            <a href="#">Лакомства</a>
-                            <a href="#">Диетическое питание</a>
-                        </div>
-                    </div>
-                
-                    <div class="category-col">
-                        <div class="category-header compact">
-                            <img src="/images/dog.jpg" alt="Собаки" class="category-icon-small">
-                            <h3>ДЛЯ СОБАК</h3>
-                        </div>
-                        <div class="subcategories-compact-grid">
-                            <a href="#">Корм для собак</a>
-                            <a href="#">Сухой корм</a>
-                            <a href="#">Влажный корм</a>
-                            <a href="#">Лакомства</a>
-                        </div>
-                    </div>
-                
-                    <div class="category-col combined">
-                        <div class="category-block">
-                            <div class="category-header compact">
-                                <img src="/images/bird.png" alt="Птицы" class="category-icon-small">
-                                <h3>ПТИЦЫ/ГРЫЗУНЫ</h3>
-                            </div>
-                            <div class="subcategories-compact-grid">
-                                <a href="#">Корма</a>
-                                <a href="#">Песок/Сено</a>
-                                <a href="#">Лакомства</a>
-                            </div>
-                        </div>
-                        
-                        <div class="category-block">
-                            <div class="category-header compact">
-                                <img src="/images/fish.jpg" alt="Рыбы" class="category-icon-small">
-                                <h3>РЫБЫ/ЧЕРЕПАХИ</h3>
-                            </div>
-                            <div class="subcategories-compact-grid">
-                                <a href="#">Корм</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
+        <div id="loginModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <h2>Вход в аккаунт</h2>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label>Email:</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Пароль:</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <button type="submit">Войти</button>
+                </form>
             </div>
-            
-            <nav class="nav-items">
-                <a href="#about">О КОМПАНИИ</a>
-                <a href="#delivery">ДОСТАВКА</a>
-                <a href="#payment">ОПЛАТА</a>
-                <a href="#sales">АКЦИИ</a>
-                <a href="#brands">БРЕНДЫ</a>
-                <a href="#blog">БЛОГ</a>
-                <a href="#contacts">КОНТАКТЫ</a>
-            </nav>
         </div>
-    </nav>
+
+    <!-- Основная навигация -->
+    <!-- Основная навигация -->
+<nav class="main-nav">
+    <div class="nav-container">
+        <!-- Блок каталога -->
+        <div class="catalog-dropdown">
+            <button class="catalog-btn">
+                <div class="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span>КАТАЛОГ</span>
+            </button>
+            
+            <!-- Контейнер меню (заполняется через JS) -->
+            <div class="catalog-menu" data-catalog-container>
+                <!-- Динамическое содержимое -->
+            </div>
+        </div>
+
+        <!-- Основные пункты меню -->
+        <div class="nav-items">
+            <a href="#about">О КОМПАНИИ</a>
+            <a href="#delivery">ДОСТАВКА</a>
+            <a href="#payment">ОПЛАТА</a>
+            <a href="#sales">АКЦИИ</a>
+            <a href="#brands">БРЕНДЫ</a>
+            <a href="#blog">БЛОГ</a>
+            <a href="#contacts">КОНТАКТЫ</a>
+        </div>
+    </div>
+</nav>
 
     <!-- Основное содержимое -->
     <!-- Основной контент: страница корзины -->

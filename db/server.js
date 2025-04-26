@@ -1,761 +1,403 @@
-require('dotenv').config();
 const express = require('express');
+const fs = require('fs');
+
 const path = require('path');
 const multer = require('multer');
 const cors = require('cors');
-const mysql = require('mysql2');
-
-// === Настройка MySQL через пул соединений ===
-const db = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'petshop',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-}).promise();
 
 const app = express();
-
-// === Разрешаем CORS и парсим JSON ===
 app.use(cors({
   origin: 'http://localhost:3000',
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  methods: ['GET','POST','PUT','DELETE'],
+  allowedHeaders: ['Content-Type']
+}));
+
+app.use(express.json());
+// Конфигурация путей
+const PROJECT_ROOT = path.join(__dirname, '..');
+const STATIC_DIRS = {
+  root: PROJECT_ROOT,
+  client: path.join(PROJECT_ROOT, 'client'),
+  public: path.join(PROJECT_ROOT, 'public'),
+  js: path.join(PROJECT_ROOT, 'js'),
+  css: path.join(PROJECT_ROOT, 'css'),
+  images: path.join(PROJECT_ROOT, 'images'),
+  uploads: path.join(PROJECT_ROOT, 'public', 'uploads'),
+  data: path.join(PROJECT_ROOT, 'data')
+  
+};
+const DATA_DIR = STATIC_DIRS.data; // Добавляем эту строку
+
+// Создание директорий при необходимости
+Object.values(STATIC_DIRS).forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+// Middleware
+app.use(cors({
+  origin: 'http://localhost:3000',
+  methods: ['POST', 'GET'],
   allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
 
-// === Пути и статика ===
-const PROJECT_ROOT = __dirname;
-app.use(express.static(path.join(PROJECT_ROOT, 'public')));
+// Настройка статических файлов
+app.use(express.static(STATIC_DIRS.root)); // HTML-файлы
 app.use('/js', express.static(path.join(PROJECT_ROOT, 'js')));
 app.use('/css', express.static(path.join(PROJECT_ROOT, 'css')));
 app.use('/images', express.static(path.join(PROJECT_ROOT, 'images')));
-app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public', 'uploads')));
+app.use('/data', express.static(path.join(PROJECT_ROOT, 'data')));
 
-// === Multer для загрузки изображений ===
-const upload = multer({
-  dest: path.join(PROJECT_ROOT, 'public', 'uploads'),
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-});
-
-// === HTML-страницы (SPA) ===
-const htmlRoutes = [
+// Роуты для HTML-страниц
+const pages = [
   '/', '/index.html',
   '/cart', '/cart.html',
   '/catalog', '/catalog.html',
   '/login', '/login.html',
   '/register', '/register.html',
   '/admin', '/admin.html',
-  '/product', '/product.html',
-  '/new-order', '/new-order.html',
-  '/favorite', '/favorite.html',
-  '/order-success', '/order-success.html'
+  '/product', '/product.html'
 ];
-htmlRoutes.forEach(route => {
-  app.get(route, (req, res) => {
-    const file = route.endsWith('.html') ? route : `${route}.html`;
-    res.sendFile(path.join(PROJECT_ROOT, file));
+
+pages.forEach(page => {
+  app.get(page, (req, res) => {
+      const pagePath = page.endsWith('.html') ? page : `${page}.html`;
+      res.sendFile(path.join(__dirname, `../${pagePath}`));
   });
 });
 
-/// === API: Пользователи ===
-app.post('/api/register', async (req, res) => {
-  try {
-    const { email, password } = req.body;
+// Конфигурация Multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const type = req.body.type || 'product';
     
-    // Проверка существования пользователя
-    const [existing] = await db.query(
-      'SELECT id FROM users WHERE email = ?', 
-      [email]
-    );
-    
-    if (existing.length > 0) {
-      return res.status(400).json({ error: 'Пользователь уже существует' });
+    let uploadPath;
+    if (type === 'category') {
+      uploadPath = path.join(__dirname, '../images/categories');
+    } else {
+      uploadPath = path.join(__dirname, '../public/uploads');
     }
 
-    // Создание нового пользователя
-    const [result] = await db.execute(
-      'INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)',
-      [email, password, 'user']
-    );
+    // Проверка и логирование пути
+    console.log('Upload path:', uploadPath);
     
-    res.status(201).json({ id: result.insertId });
-    
-  } catch (e) {
-    console.error('Ошибка регистрации:', e);
-    res.status(500).json({ error: 'Ошибка регистрации' });
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
+    console.log('Generated filename:', uniqueName);
+    cb(null, uniqueName);
   }
 });
 
-app.post('/api/login', async (req, res) => {
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error('Разрешены только изображения (JPEG, PNG, WebP)'));
+    }
+  }
+});
+
+// API Endpoints
+
+app.get('/api/reviews/:type', (req, res) => {
   try {
-    const { email, password } = req.body;
+      const type = req.params.type;
+      const validTypes = ['approved', 'pending'];
+      if (!validTypes.includes(type)) {
+          return res.status(400).json({ error: 'Invalid review type' });
+      }
+
+      const filePath = path.join(DATA_DIR, `${type}-reviews.json`);
+      
+      // Если файла нет - создаем пустой массив
+      if (!fs.existsSync(filePath)) {
+          fs.writeFileSync(filePath, JSON.stringify([]));
+      }
+
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      res.json(data);
+  } catch (error) {
+      console.error('Reviews error:', error);
+      res.status(500).json({ error: 'Error reading reviews' });
+  }
+});
+  // Добавить в секцию API Endpoints
+  app.get('/api/reviews/:type', (req, res) => {
+    try {
+      const {type} = req.params;
+      if (!['approved','pending'].includes(type)) {
+        return res.status(400).json({error: 'Invalid review type'});
+      }
+      const filePath = path.join(DATA_DIR, `${type}-reviews.json`);
+      if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, '[]');
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      res.json(data);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({error: 'Error reading reviews'});
+    }
+  });  // <-- не забыли закрыть этот колбэк!
+  
+  // Создание заказа (full)
+  app.post('/api/orders', (req, res) => {
+    try {
+      const ordersFile = path.join(DATA_DIR, 'orders.json');
+      const orders = fs.existsSync(ordersFile)
+        ? JSON.parse(fs.readFileSync(ordersFile, 'utf8'))
+        : [];
+      orders.push({ id: Date.now(), status: 'new', ...req.body });
+      fs.writeFileSync(ordersFile, JSON.stringify(orders, null, 2));
+      res.status(201).json({success: true});
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({error: 'Order save failed'});
+    }
+  });
+  
+  // Создание quick-order
+  app.post('/api/quick-orders', (req, res) => {
+    try {
+      const file = path.join(DATA_DIR, 'quick-orders.json');
+      const arr = fs.existsSync(file)
+        ? JSON.parse(fs.readFileSync(file, 'utf8'))
+        : [];
+      arr.push(req.body);
+      fs.writeFileSync(file, JSON.stringify(arr, null, 2));
+      res.status(201).json(req.body);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({error: 'Quick order save failed'});
+    }
+  });
+  
+  // Получение всех заказов
+  app.get('/api/orders', (req, res) => {
     
-    // Поиск пользователя
-    const [[user]] = await db.query(
-      `SELECT id, email, password_hash, role 
-       FROM users WHERE email = ?`,
-      [email]
-    );
+    try {
+      const file = path.join(DATA_DIR, 'orders.json');
+      const orders = fs.existsSync(file)
+        ? JSON.parse(fs.readFileSync(file, 'utf8'))
+        : [];
+      res.json(orders);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({error: 'Cannot load orders'});
+    }
+  });
+  
+  // Получение quick-orders
+  app.get('/api/quick-orders', (req, res) => {
+    try {
+      const file = path.join(DATA_DIR, 'quick-orders.json');
+      const arr = fs.existsSync(file)
+        ? JSON.parse(fs.readFileSync(file, 'utf8'))
+        : [];
+      res.json(arr);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({error: 'Cannot load quick orders'});
+    }
+  });
+  
+
+
+
+// Добавить ПОСЛЕ существующих эндпоинтов /api/reviews/:type
+
+// Обновление статусов отзывов (одобрение/удаление)
+app.put('/api/reviews', (req, res) => {
+  try {
+    const { pending, approved } = req.body;
     
-    // Проверка пароля
-    if (!user || user.password_hash !== password) {
-      return res.status(401).json({ error: 'Неверные данные' });
+    // Валидация данных
+    if (!Array.isArray(pending) || !Array.isArray(approved)) {
+      return res.status(400).json({ error: 'Invalid data format' });
     }
 
-    // Успешный ответ
-    res.json({
-      id: user.id,
-      email: user.email,
-      role: user.role
+    // Атомарное сохранение
+    fs.writeFileSync(
+      path.join(DATA_DIR, 'pending-reviews.json'),
+      JSON.stringify(pending, null, 2)
+    );
+    
+    fs.writeFileSync(
+      path.join(DATA_DIR, 'approved-reviews.json'),
+      JSON.stringify(approved, null, 2)
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving reviews:', error);
+    res.status(500).json({ error: 'Failed to save reviews' });
+  }
+});
+
+// Удаление отзыва
+app.delete('/api/reviews/:type/:id', (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const filePath = path.join(DATA_DIR, `${type}-reviews.json`);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Review file not found' });
+    }
+
+    const reviews = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const updatedReviews = reviews.filter(r => r.id != id);
+    
+    fs.writeFileSync(filePath, JSON.stringify(updatedReviews, null, 2));
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting review:', error);
+    res.status(500).json({ error: 'Failed to delete review' });
+  }
+});
+
+// Удалить дублирующий CORS middleware (оставить только один вызов)
+
+// Добавить в самое начало секции API Endpoints (перед другими обработчиками)
+// Добавьте ПЕРЕД всеми другими обработчиками маршрутов
+app.post('/api/save-review', (req, res) => {
+  try {
+      const filePath = path.join(DATA_DIR, 'pending-reviews.json');
+      let reviews = [];
+
+      if (fs.existsSync(filePath)) {
+          reviews = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      }
+
+      // Генерация ID
+      const lastId = reviews.length > 0 
+          ? Math.max(...reviews.map(r => r.id)) 
+          : 0;
+      const newId = lastId + 1;
+
+      const newReview = {
+          id: newId, // Инкрементный ID
+          ...req.body,
+          created_at: new Date().toISOString(),
+          status: 'pending'
+      };
+
+      reviews.push(newReview);
+      fs.writeFileSync(filePath, JSON.stringify(reviews, null, 2));
+
+      res.json({ success: true });
+  } catch (error) {
+      console.error('Error:', error);
+      res.status(500).json({ success: false });
+  }
+});
+
+
+// Убедитесь что CORS настроен правильно в самом начале
+
+
+app.post('/api/save-data', (req, res) => {
+  try {
+    const { filename, data } = req.body;
+    
+    // Убрать проверку на reviews.json
+    const filePath = path.join(DATA_DIR, filename);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Save error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/data/:filename', (req, res) => {
+  try {
+    const filePath = path.join(DATA_DIR, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    res.json(data);
+  } catch (error) {
+    console.error('Read error:', error);
+    res.status(500).json({ error: 'Error reading file' });
+  }
+});
+
+app.post('/api/upload-image', upload.single('image'), (req, res) => {
+  try {
+    if (!req.file) {
+      console.error('No file received');
+      return res.status(400).json({ error: 'Файл не был загружен' });
+    }
+    
+    console.log('Received upload:', {
+      type: req.body.type,
+      originalname: req.file.originalname,
+      filename: req.file.filename,
+      path: req.file.path
     });
+
+    const relativePath = req.body.type === 'category' 
+      ? `/images/categories/${req.file.filename}`
+      : `/uploads/${req.file.filename}`;
+
+    console.log('Returning path:', relativePath);
     
-  } catch (e) {
-    console.error('Ошибка входа:', e);
-    res.status(500).json({ error: 'Ошибка авторизации' });
+    res.json({ success: true, path: relativePath });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ 
+      error: 'Ошибка загрузки файла',
+      details: error.message
+    });
   }
 });
 
-// === API: Категории ===
-app.get('/api/categories', async (req, res) => {
-  try {
-    const [rows] = await db.query(`
-      SELECT id, name, parent_id 
-      FROM categories
-    `);
-    res.json(rows);
-  } catch (e) {
-    console.error('Ошибка получения категорий:', e);
-    res.status(500).json({ error: 'Ошибка загрузки категорий' });
-  }
-});
-
-app.post('/api/categories', async (req, res) => {
-  try {
-    const { name, parent_id } = req.body;
-    
-    const [result] = await db.execute(`
-      INSERT INTO categories (name, parent_id)
-      VALUES (?, ?)
-    `, [name, parent_id || null]);
-    
-    res.status(201).json({ id: result.insertId });
-    
-  } catch (e) {
-    console.error('Ошибка создания категории:', e);
-    res.status(500).json({ error: 'Ошибка создания категории' });
-  }
-});
-
-app.put('/api/categories/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, parent_id } = req.body;
-    
-    await db.execute(`
-      UPDATE categories
-      SET name = ?, parent_id = ?
-      WHERE id = ?
-    `, [name, parent_id || null, id]);
-    
-    res.json({ success: true });
-    
-  } catch (e) {
-    console.error('Ошибка обновления категории:', e);
-    res.status(500).json({ error: 'Ошибка обновления категории' });
-  }
-});
-
-app.delete('/api/categories/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    await db.execute(`
-      DELETE FROM categories 
-      WHERE id = ?
-    `, [id]);
-    
-    res.json({ success: true });
-    
-  } catch (e) {
-    console.error('Ошибка удаления категории:', e);
-    res.status(500).json({ error: 'Ошибка удаления категории' });
-  }
+app.get('/data/categories.json', (req, res) => {
+  res.sendFile(path.join(STATIC_DIRS.data, 'categories.json'));
 });
 
 
-// === API: Товары ===
-app.get('/api/products', async (req, res) => {
-  try {
-    const [products] = await db.query(`
-      SELECT 
-        id, title, brand, age_group, 
-        size_group, description, sku, 
-        CAST(rating AS DECIMAL(3,2)) AS rating,
-        category_id, image_url 
-      FROM products
-    `);
-    res.json(products);
-  } catch (e) {
-    console.error('Ошибка загрузки товаров:', e);
-    res.status(500).json({ error: 'Ошибка загрузки товаров' });
-  }
-});
 
-app.get('/api/products/:id', async (req, res) => {
-  const productId = +req.params.id;
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    const [[product]] = await conn.query(`
-      SELECT 
-        id, title, brand, age_group,
-        size_group, description, sku,
-        CAST(rating AS DECIMAL(3,2)) AS rating,
-        category_id, image_url
-      FROM products WHERE id = ?
-    `, [productId]);
-
-    if (!product) return res.status(404).json({ error: 'Товар не найден' });
-
-    const [variants] = await conn.query(`
-      SELECT 
-        id AS variant_id,
-        CAST(weight AS DECIMAL(8,2)) AS weight,
-        CAST(price AS DECIMAL(10,2)) AS price
-      FROM product_variants 
-      WHERE product_id = ?
-    `, [productId]);
-
-    await conn.commit();
-    res.json({ ...product, variants });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка загрузки товара:', e);
-    res.status(500).json({ error: 'Ошибка загрузки товара' });
-  } finally {
-    conn.release();
-  }
-});
-
-app.post('/api/products', upload.single('image'), async (req, res) => {
-  const conn = await db.getConnection();
+// Fallback для SPA роутинга
+app.get('*', (req, res) => {
+  const allowedPaths = ['/js', '/css', '/images', '/public', '/uploads'];
+  const isStaticFile = allowedPaths.some(p => req.path.startsWith(p));
   
-  try {
-    await conn.beginTransaction();
-    
-    const { 
-      title,
-      brand = null,
-      age_group = null,
-      size_group = null,
-      description = null,
-      sku = null,
-      rating = null,
-      category_id,
-      variants = '[]'
-    } = req.body;
-
-    // Валидация
-    if (!title || !category_id) {
-      throw new Error('Заполните обязательные поля: title и category_id');
-    }
-
-    // Вставка товара
-    const [productResult] = await conn.execute(`
-      INSERT INTO products (
-        title, brand, age_group, size_group,
-        description, sku, rating, category_id, image_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      title,
-      brand,
-      age_group,
-      size_group,
-      description,
-      sku,
-      rating ? parseFloat(rating) : null,
-      category_id,
-      req.file ? `/uploads/${req.file.filename}` : null
-    ]);
-
-    const productId = productResult.insertId;
-
-    // Обработка вариантов
-    const parsedVariants = JSON.parse(variants);
-    for (const variant of parsedVariants) {
-      await conn.execute(`
-        INSERT INTO product_variants (product_id, weight, price)
-        VALUES (?, ?, ?)
-      `, [
-        productId,
-        parseFloat(variant.weight),
-        parseFloat(variant.price)
-      ]);
-    }
-
-    await conn.commit();
-    res.status(201).json({ id: productId });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка создания товара:', e);
-    res.status(500).json({ error: e.message || 'Ошибка создания товара' });
-  } finally {
-    conn.release();
+  if (isStaticFile) {
+    const filePath = path.join(PROJECT_ROOT, req.path);
+    if (fs.existsSync(filePath)) return res.sendFile(filePath);
   }
-});
-
-app.put('/api/products/:id', upload.single('image'), async (req, res) => {
-  const productId = +req.params.id;
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    const {
-      title,
-      brand = null,
-      age_group = null,
-      size_group = null,
-      description = null,
-      sku = null,
-      rating = null,
-      category_id,
-      variants = '[]'
-    } = req.body;
-
-    // Обновление товара
-    await conn.execute(`
-      UPDATE products SET
-        title = ?,
-        brand = ?,
-        age_group = ?,
-        size_group = ?,
-        description = ?,
-        sku = ?,
-        rating = ?,
-        category_id = ?,
-        image_url = COALESCE(?, image_url)
-      WHERE id = ?
-    `, [
-      title,
-      brand,
-      age_group,
-      size_group,
-      description,
-      sku,
-      rating ? parseFloat(rating) : null,
-      category_id,
-      req.file ? `/uploads/${req.file.filename}` : null,
-      productId
-    ]);
-
-    // Обновление вариантов
-    await conn.execute(`
-      DELETE FROM product_variants WHERE product_id = ?
-    `, [productId]);
-
-    const parsedVariants = JSON.parse(variants);
-    for (const variant of parsedVariants) {
-      await conn.execute(`
-        INSERT INTO product_variants (product_id, weight, price)
-        VALUES (?, ?, ?)
-      `, [
-        productId,
-        parseFloat(variant.weight),
-        parseFloat(variant.price)
-      ]);
-    }
-
-    await conn.commit();
-    res.json({ success: true });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка обновления товара:', e);
-    res.status(500).json({ error: e.message || 'Ошибка обновления товара' });
-  } finally {
-    conn.release();
-  }
-});
-
-app.delete('/api/products/:id', async (req, res) => {
-  const productId = +req.params.id;
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    await conn.execute(`
-      DELETE FROM product_variants WHERE product_id = ?
-    `, [productId]);
-
-    await conn.execute(`
-      DELETE FROM products WHERE id = ?
-    `, [productId]);
-
-    await conn.commit();
-    res.json({ success: true });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка удаления товара:', e);
-    res.status(500).json({ error: 'Ошибка удаления товара' });
-  } finally {
-    conn.release();
-  }
-});
-
-// === API: Локации ===
-app.get('/api/locations', async (req, res) => {
-  try {
-    const [locations] = await db.query(`
-      SELECT 
-        id,
-        name,
-        CAST(delivery_cost AS DECIMAL(10,2)) AS delivery_cost,
-        CAST(free_from_amount AS DECIMAL(12,2)) AS free_from_amount
-      FROM locations
-    `);
-    res.json(locations);
-  } catch (e) {
-    console.error('Ошибка загрузки локаций:', e);
-    res.status(500).json({ error: 'Ошибка загрузки данных о доставке' });
-  }
-});
-
-// === API: Отзывы ===
-app.get('/api/reviews/:type', async (req, res) => {
-  const allowedTypes = ['pending', 'approved'];
-  const type = req.params.type;
   
-  if (!allowedTypes.includes(type)) {
-    return res.status(400).json({ error: 'Неверный тип отзывов' });
-  }
-
-  try {
-    const [reviews] = await db.query(`
-      SELECT 
-        id,
-        author_name,
-        email,
-        phone,
-        rating,
-        comment,
-        created_at,
-        product_id
-      FROM ${type === 'pending' ? 'reviews_pending' : 'reviews_approved'}
-    `);
-    
-    res.json(reviews);
-    
-  } catch (e) {
-    console.error('Ошибка загрузки отзывов:', e);
-    res.status(500).json({ error: 'Ошибка загрузки отзывов' });
-  }
+  res.sendFile(path.join(PROJECT_ROOT, 'index.html'));
 });
 
-app.post('/api/reviews', async (req, res) => {
-  try {
-    const { 
-      author_name,
-      email,
-      phone = null,
-      rating,
-      comment,
-      product_id 
-    } = req.body;
-
-    const [result] = await db.execute(`
-      INSERT INTO reviews_pending (
-        author_name,
-        email,
-        phone,
-        rating,
-        comment,
-        product_id
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `, [author_name, email, phone, rating, comment, product_id]);
-
-    res.status(201).json({ id: result.insertId });
-    
-  } catch (e) {
-    console.error('Ошибка создания отзыва:', e);
-    res.status(500).json({ error: 'Ошибка сохранения отзыва' });
-  }
-});
-
-app.put('/api/reviews/:id/approve', async (req, res) => {
-  const reviewId = +req.params.id;
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    // Переносим отзыв в утвержденные
-    await conn.execute(`
-      INSERT INTO reviews_approved (
-        author_name,
-        email,
-        phone,
-        rating,
-        comment,
-        created_at,
-        product_id
-      )
-      SELECT 
-        author_name,
-        email,
-        phone,
-        rating,
-        comment,
-        created_at,
-        product_id
-      FROM reviews_pending 
-      WHERE id = ?
-    `, [reviewId]);
-
-    // Удаляем из ожидающих
-    await conn.execute(`
-      DELETE FROM reviews_pending 
-      WHERE id = ?
-    `, [reviewId]);
-
-    await conn.commit();
-    res.json({ success: true });
-    
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка одобрения отзыва:', e);
-    res.status(500).json({ error: 'Ошибка модерации отзыва' });
-  } finally {
-    conn.release();
-  }
-});
-
-app.delete('/api/reviews/:type/:id', async (req, res) => {
-  const allowedTypes = ['pending', 'approved'];
-  const { type, id } = req.params;
-  
-  if (!allowedTypes.includes(type)) {
-    return res.status(400).json({ error: 'Неверный тип отзывов' });
-  }
-
-  try {
-    await db.execute(`
-      DELETE FROM ${type === 'pending' ? 'reviews_pending' : 'reviews_approved'} 
-      WHERE id = ?
-    `, [id]);
-    
-    res.json({ success: true });
-    
-  } catch (e) {
-    console.error('Ошибка удаления отзыва:', e);
-    res.status(500).json({ error: 'Ошибка удаления отзыва' });
-  }
-});
-
-
-// === API: Заказы ===
-app.get('/api/orders', async (req, res) => {
-  try {
-    const [orders] = await db.query(`
-      SELECT 
-        id,
-        status,
-        location_id,
-        customer_phone,
-        customer_fullname,
-        customer_email,
-        payment_method,
-        CAST(delivery_cost AS DECIMAL(10,2)) AS delivery_cost,
-        has_discount,
-        CAST(total_amount AS DECIMAL(12,2)) AS total_amount,
-        created_at
-      FROM orders
-      ORDER BY created_at DESC
-    `);
-    res.json(orders);
-  } catch (e) {
-    console.error('Ошибка загрузки заказов:', e);
-    res.status(500).json({ error: 'Ошибка получения заказов' });
-  }
-});
-
-app.post('/api/orders', async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
-    
-    const { customer, items, total, delivery_cost, has_discount, status = 'new' } = req.body;
-    
-    // Валидация обязательных полей
-    if (!customer?.phone || !customer?.name || !customer?.email) {
-      throw new Error('Не заполнены обязательные поля клиента');
-    }
-
-    // Создание заказа
-    const [orderResult] = await conn.execute(`
-      INSERT INTO orders (
-        status,
-        location_id,
-        customer_phone,
-        customer_fullname,
-        customer_email,
-        payment_method,
-        delivery_cost,
-        has_discount,
-        total_amount
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      status,
-      customer.location_id || 1,
-      customer.phone,
-      customer.name,
-      customer.email,
-      customer.payment_method || 'cash',
-      parseFloat(delivery_cost) || 0,
-      has_discount ? 1 : 0,
-      parseFloat(total)
-    ]);
-
-    const orderId = orderResult.insertId;
-
-    // Добавление позиций
-    for (const item of items) {
-      await conn.execute(`
-        INSERT INTO order_items (
-          order_id,
-          product_variant_id,
-          quantity,
-          weight,
-          price
-        ) VALUES (?, ?, ?, ?, ?)
-      `, [
-        orderId,
-        item.id,
-        item.quantity,
-        parseFloat(item.weight) || 0,
-        parseFloat(item.price)
-      ]);
-    }
-
-    await conn.commit();
-    res.status(201).json({ id: orderId });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка создания заказа:', e);
-    res.status(500).json({ error: e.message || 'Ошибка создания заказа' });
-  } finally {
-    conn.release();
-  }
-});
-
-// === API: Быстрые заказы ===
-app.get('/api/quick-orders', async (req, res) => {
-  try {
-    const [quickOrders] = await db.query(`
-      SELECT 
-        id,
-        status,
-        street,
-        house_number,
-        customer_name,
-        CAST(total_amount AS DECIMAL(12,2)) AS total_amount,
-        created_at
-      FROM quick_orders
-      ORDER BY created_at DESC
-    `);
-    res.json(quickOrders);
-  } catch (e) {
-    console.error('Ошибка загрузки быстрых заказов:', e);
-    res.status(500).json({ error: 'Ошибка получения быстрых заказов' });
-  }
-});
-
-app.post('/api/quick-orders', async (req, res) => {
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    const { 
-      street,
-      house_number,
-      customer_name,
-      customer_phone,
-      comment = '',
-      total_amount,
-      status = 'new',
-      items
-    } = req.body;
-
-    // Создание быстрого заказа
-    const [quickOrderResult] = await conn.execute(`
-      INSERT INTO quick_orders (
-        status,
-        street,
-        house_number,
-        customer_name,
-        customer_phone,
-        comment,
-        total_amount
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      status,
-      street,
-      house_number,
-      customer_name,
-      customer_phone,
-      comment,
-      parseFloat(total_amount)
-    ]);
-
-    const quickOrderId = quickOrderResult.insertId;
-
-    // Добавление позиций
-    for (const item of items) {
-      await conn.execute(`
-        INSERT INTO quick_order_items (
-          quick_order_id,
-          product_variant_id,
-          quantity,
-          weight,
-          price
-        ) VALUES (?, ?, ?, ?, ?)
-      `, [
-        quickOrderId,
-        item.id,
-        item.quantity,
-        parseFloat(item.weight) || 0,
-        parseFloat(item.price)
-      ]);
-    }
-
-    await conn.commit();
-    res.status(201).json({ id: quickOrderId });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('Ошибка создания быстрого заказа:', e);
-    res.status(500).json({ error: e.message || 'Ошибка создания быстрого заказа' });
-  } finally {
-    conn.release();
-  }
-});
-
-
-// === 404 для API ===
-app.use('/api/*', (req, res) => {
-  res.status(404).json({ error: 'API route not found' });
-});
-
-// === Запуск сервера ===
+// Запуск сервера
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`
+  Сервер запущен на порту ${PORT}
+  Доступные пути:
+  - HTML:       ${STATIC_DIRS.root}
+  - JavaScript: ${STATIC_DIRS.js}
+  - CSS:        ${STATIC_DIRS.css}
+  - Изображения: ${STATIC_DIRS.images}
+  - Загрузки:    ${STATIC_DIRS.uploads}
+  `);
+});
+
+const INITIAL_REVIEW_FILES = ['pending-reviews.json', 'approved-reviews.json'];
+INITIAL_REVIEW_FILES.forEach(file => {
+    const filePath = path.join(DATA_DIR, file);
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, JSON.stringify([]));
+    }
+});
