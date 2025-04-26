@@ -31,26 +31,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initCatalog();
 
+  document.addEventListener('DOMContentLoaded', () => {
+    initCatalog();
+  });
+  
   async function initCatalog() {
-    try {
-      showLoading();
-      const [categories, filterData] = await Promise.all([
-        fetchCategories(),
-        fetchFilters()
-      ]);
-      populateCategoryDropdown(categories);
-      populateFilterSelect(brandSelect, filterData.brands);
-      populateFilterSelect(ageSelect, filterData.ageGroups);
-      populateFilterSelect(sizeSelect, filterData.sizeGroups);
-      setupFilterListeners();
-      await loadProducts();
-    } catch (err) {
-      console.error(err);
-      showError('Ошибка при инициализации каталога');
-    } finally {
-      hideLoading();
+    showLoading();
+  
+    // Определяем, на странице ли каталог с фильтрами:
+    const hasFilters = document.getElementById('filter-category') !== null;
+  
+    // 1) если есть фильтры — грузим категории и инициализируем выпадашки
+    if (hasFilters) {
+      try {
+        // селекты, которые теперь точно есть на странице каталога
+        const categorySelect = document.getElementById('filter-category');
+        const brandSelect    = document.getElementById('filter-brand');
+        const ageSelect      = document.getElementById('filter-age');
+        const sizeSelect     = document.getElementById('filter-size');
+  
+        const categories = await fetchCategories();
+        populateCategoryDropdown(categories); // внутри использует categorySelect
+  
+        const filtersData = await fetchFilters();
+        populateFilterSelect(brandSelect, filtersData.brands);
+        populateFilterSelect(ageSelect,   filtersData.ageGroups);
+        populateFilterSelect(sizeSelect,  filtersData.sizeGroups);
+  
+        setupFilterListeners();
+      } catch (e) {
+        console.error('Ошибка инициализации фильтров:', e);
+        // при ошибке фильтры просто не отобразятся, но каталог загрузится
+      }
     }
+  
+    // 2) всегда грузим товары
+    await loadProducts();
+  
+    hideLoading();
   }
+  
+  
 
   function showLoading() { loading.style.display = 'block'; }
   function hideLoading() { loading.style.display = 'none'; }

@@ -17,6 +17,8 @@ const db = mysql.createPool({
 }).promise();
 
 const app = express();
+
+// === Разрешаем CORS и парсим JSON ===
 app.use(cors({
   origin: 'http://localhost:3000',
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
@@ -24,12 +26,14 @@ app.use(cors({
 }));
 app.use(express.json());
 
+
+
 // === Пути и статика ===
-const PROJECT_ROOT = __dirname;
-app.use(express.static(PROJECT_ROOT)); // HTML, index.html и др.
-app.use('/js',      express.static(path.join(PROJECT_ROOT, 'js')));
-app.use('/css',     express.static(path.join(PROJECT_ROOT, 'css')));
-app.use('/images',  express.static(path.join(PROJECT_ROOT, 'images')));
+const PROJECT_ROOT = path.join(__dirname, '..');;
+app.use(express.static(path.join(PROJECT_ROOT, 'public')));
+app.use('/js', express.static(path.join(PROJECT_ROOT, 'js')));
+app.use('/css', express.static(path.join(PROJECT_ROOT, 'css')));
+app.use('/images', express.static(path.join(PROJECT_ROOT, 'images')));
 app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public', 'uploads')));
 
 // === Multer для загрузки изображений ===
@@ -39,263 +43,550 @@ const upload = multer({
 });
 
 // === HTML-страницы (SPA) ===
-['/', '/index.html',
- '/cart', '/cart.html',
- '/catalog', '/catalog.html',
- '/login', '/login.html',
- '/register', '/register.html',
- '/admin', '/admin.html',
- '/product', '/product.html',
- '/new-order', '/new-order.html',
- '/favorite', '/favorite.html',
- '/order-success', '/order-success.html']
-.forEach(route => {
+const htmlRoutes = [
+  '/', '/index.html',
+  '/cart', '/cart.html',
+  '/catalog', '/catalog.html',
+  '/login', '/login.html',
+  '/register', '/register.html',
+  '/admin', '/admin.html',
+  '/product', '/product.html',
+  '/new-order', '/new-order.html',
+  '/favorite', '/favorite.html',
+  '/order-success', '/order-success.html'
+];
+htmlRoutes.forEach(route => {
   app.get(route, (req, res) => {
     const file = route.endsWith('.html') ? route : `${route}.html`;
     res.sendFile(path.join(PROJECT_ROOT, file));
   });
 });
 
-// === API: Пользователи ===
+/// === API: Пользователи ===
 app.post('/api/register', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const [exists] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
-    if (exists.length) return res.status(400).json({ error: 'Пользователь уже существует' });
-    const [r] = await db.execute(
+    
+    // Проверка существования пользователя
+    const [existing] = await db.query(
+      'SELECT id FROM users WHERE email = ?', 
+      [email]
+    );
+    
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'Пользователь уже существует' });
+    }
+
+    // Создание нового пользователя
+    const [result] = await db.execute(
       'INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)',
       [email, password, 'user']
     );
-    res.status(201).json({ id: r.insertId });
+    
+    res.status(201).json({ id: result.insertId });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Регистрация не удалась' });
+    console.error('Ошибка регистрации:', e);
+    res.status(500).json({ error: 'Ошибка регистрации' });
   }
 });
 
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // Поиск пользователя
     const [[user]] = await db.query(
-      'SELECT id, email, password_hash, role FROM users WHERE email = ?', [email]
+      `SELECT id, email, password_hash, role 
+       FROM users WHERE email = ?`,
+      [email]
     );
+    
+    // Проверка пароля
     if (!user || user.password_hash !== password) {
-      return res.status(401).json({ error: 'Неверный логин или пароль' });
+      return res.status(401).json({ error: 'Неверные данные' });
     }
-    res.json({ id: user.id, email: user.email, role: user.role });
+
+    // Успешный ответ
+    res.json({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Ошибка при входе' });
+    console.error('Ошибка входа:', e);
+    res.status(500).json({ error: 'Ошибка авторизации' });
   }
 });
 
 // === API: Категории ===
 app.get('/api/categories', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT id, name, parent_id FROM categories');
+    const [rows] = await db.query(`
+      SELECT id, name, parent_id 
+      FROM categories
+    `);
     res.json(rows);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось загрузить категории' });
+    console.error('Ошибка получения категорий:', e);
+    res.status(500).json({ error: 'Ошибка загрузки категорий' });
   }
 });
 
 app.post('/api/categories', async (req, res) => {
   try {
     const { name, parent_id } = req.body;
-    const [r] = await db.execute(
-      'INSERT INTO categories (name, parent_id) VALUES (?, ?)',
-      [name, parent_id || null]
-    );
-    res.status(201).json({ id: r.insertId });
+    
+    const [result] = await db.execute(`
+      INSERT INTO categories (name, parent_id)
+      VALUES (?, ?)
+    `, [name, parent_id || null]);
+    
+    res.status(201).json({ id: result.insertId });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось создать категорию' });
+    console.error('Ошибка создания категории:', e);
+    res.status(500).json({ error: 'Ошибка создания категории' });
   }
 });
 
 app.put('/api/categories/:id', async (req, res) => {
   try {
+    const { id } = req.params;
     const { name, parent_id } = req.body;
-    await db.execute(
-      'UPDATE categories SET name = ?, parent_id = ? WHERE id = ?',
-      [name, parent_id || null, req.params.id]
-    );
+    
+    await db.execute(`
+      UPDATE categories
+      SET name = ?, parent_id = ?
+      WHERE id = ?
+    `, [name, parent_id || null, id]);
+    
     res.json({ success: true });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось обновить категорию' });
+    console.error('Ошибка обновления категории:', e);
+    res.status(500).json({ error: 'Ошибка обновления категории' });
   }
 });
 
 app.delete('/api/categories/:id', async (req, res) => {
   try {
-    await db.execute('DELETE FROM categories WHERE id = ?', [req.params.id]);
+    const { id } = req.params;
+    
+    await db.execute(`
+      DELETE FROM categories 
+      WHERE id = ?
+    `, [id]);
+    
     res.json({ success: true });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось удалить категорию' });
+    console.error('Ошибка удаления категории:', e);
+    res.status(500).json({ error: 'Ошибка удаления категории' });
   }
 });
+
 
 // === API: Товары ===
 app.get('/api/products', async (req, res) => {
   try {
-    const [rows] = await db.query(
-      'SELECT id, title, brand, age_group, size_group, description, sku, rating, category_id FROM products'
-    );
-    res.json(rows);
+    const [products] = await db.query(`
+      SELECT 
+        id, title, brand, age_group, 
+        size_group, description, sku, 
+        CAST(rating AS DECIMAL(3,2)) AS rating,
+        category_id, image_url 
+      FROM products
+    `);
+    res.json(products);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось загрузить товары' });
+    console.error('Ошибка загрузки товаров:', e);
+    res.status(500).json({ error: 'Ошибка загрузки товаров' });
   }
 });
 
 app.get('/api/products/:id', async (req, res) => {
+  const productId = +req.params.id;
+  const conn = await db.getConnection();
+
   try {
-    const id = +req.params.id;
-    const [[product]] = await db.query('SELECT * FROM products WHERE id = ?', [id]);
+    await conn.beginTransaction();
+
+    const [[product]] = await conn.query(`
+      SELECT 
+        id, title, brand, age_group,
+        size_group, description, sku,
+        CAST(rating AS DECIMAL(3,2)) AS rating,
+        category_id, image_url
+      FROM products WHERE id = ?
+    `, [productId]);
+
     if (!product) return res.status(404).json({ error: 'Товар не найден' });
-    const [variants] = await db.query(
-      'SELECT id AS variant_id, weight, price FROM product_variants WHERE product_id = ?',
-      [id]
-    );
+
+    const [variants] = await conn.query(`
+      SELECT 
+        id AS variant_id,
+        CAST(weight AS DECIMAL(8,2)) AS weight,
+        CAST(price AS DECIMAL(10,2)) AS price
+      FROM product_variants 
+      WHERE product_id = ?
+    `, [productId]);
+
+    await conn.commit();
     res.json({ ...product, variants });
+
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось загрузить товар' });
+    await conn.rollback();
+    console.error('Ошибка загрузки товара:', e);
+    res.status(500).json({ error: 'Ошибка загрузки товара' });
+  } finally {
+    conn.release();
   }
 });
 
 app.post('/api/products', upload.single('image'), async (req, res) => {
+  const conn = await db.getConnection();
+  
   try {
-    const { title, brand, age_group, size_group, description, sku, rating, category_id, variants } = req.body;
-    const [r] = await db.execute(
-      'INSERT INTO products (title, brand, age_group, size_group, description, sku, rating, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, brand, age_group, size_group, description, sku, rating, category_id]
-    );
-    const pid = r.insertId;
-    JSON.parse(variants).forEach(async v => {
-      await db.execute(
-        'INSERT INTO product_variants (product_id, weight, price) VALUES (?, ?, ?)',
-        [pid, v.weight, v.price]
-      );
-    });
-    res.status(201).json({ id: pid });
+    await conn.beginTransaction();
+    
+    const { 
+      title,
+      brand = null,
+      age_group = null,
+      size_group = null,
+      description = null,
+      sku = null,
+      rating = null,
+      category_id,
+      variants = '[]'
+    } = req.body;
+
+    // Валидация
+    if (!title || !category_id) {
+      throw new Error('Заполните обязательные поля: title и category_id');
+    }
+
+    // Вставка товара
+    const [productResult] = await conn.execute(`
+      INSERT INTO products (
+        title, brand, age_group, size_group,
+        description, sku, rating, category_id, image_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      title,
+      brand,
+      age_group,
+      size_group,
+      description,
+      sku,
+      rating ? parseFloat(rating) : null,
+      category_id,
+      req.file ? `/uploads/${req.file.filename}` : null
+    ]);
+
+    const productId = productResult.insertId;
+
+    // Обработка вариантов
+    const parsedVariants = JSON.parse(variants);
+    for (const variant of parsedVariants) {
+      await conn.execute(`
+        INSERT INTO product_variants (product_id, weight, price)
+        VALUES (?, ?, ?)
+      `, [
+        productId,
+        parseFloat(variant.weight),
+        parseFloat(variant.price)
+      ]);
+    }
+
+    await conn.commit();
+    res.status(201).json({ id: productId });
+
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось создать товар' });
+    await conn.rollback();
+    console.error('Ошибка создания товара:', e);
+    res.status(500).json({ error: e.message || 'Ошибка создания товара' });
+  } finally {
+    conn.release();
   }
 });
 
-app.put('/api/products/:id', async (req, res) => {
+app.put('/api/products/:id', upload.single('image'), async (req, res) => {
+  const productId = +req.params.id;
+  const conn = await db.getConnection();
+
   try {
-    const { title, brand, age_group, size_group, description, sku, rating, category_id } = req.body;
-    await db.execute(
-      'UPDATE products SET title=?, brand=?, age_group=?, size_group=?, description=?, sku=?, rating=?, category_id=? WHERE id=?',
-      [title, brand, age_group, size_group, description, sku, rating, category_id, req.params.id]
-    );
+    await conn.beginTransaction();
+
+    const {
+      title,
+      brand = null,
+      age_group = null,
+      size_group = null,
+      description = null,
+      sku = null,
+      rating = null,
+      category_id,
+      variants = '[]'
+    } = req.body;
+
+    // Обновление товара
+    await conn.execute(`
+      UPDATE products SET
+        title = ?,
+        brand = ?,
+        age_group = ?,
+        size_group = ?,
+        description = ?,
+        sku = ?,
+        rating = ?,
+        category_id = ?,
+        image_url = COALESCE(?, image_url)
+      WHERE id = ?
+    `, [
+      title,
+      brand,
+      age_group,
+      size_group,
+      description,
+      sku,
+      rating ? parseFloat(rating) : null,
+      category_id,
+      req.file ? `/uploads/${req.file.filename}` : null,
+      productId
+    ]);
+
+    // Обновление вариантов
+    await conn.execute(`
+      DELETE FROM product_variants WHERE product_id = ?
+    `, [productId]);
+
+    const parsedVariants = JSON.parse(variants);
+    for (const variant of parsedVariants) {
+      await conn.execute(`
+        INSERT INTO product_variants (product_id, weight, price)
+        VALUES (?, ?, ?)
+      `, [
+        productId,
+        parseFloat(variant.weight),
+        parseFloat(variant.price)
+      ]);
+    }
+
+    await conn.commit();
     res.json({ success: true });
+
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось обновить товар' });
+    await conn.rollback();
+    console.error('Ошибка обновления товара:', e);
+    res.status(500).json({ error: e.message || 'Ошибка обновления товара' });
+  } finally {
+    conn.release();
   }
 });
 
 app.delete('/api/products/:id', async (req, res) => {
+  const productId = +req.params.id;
+  const conn = await db.getConnection();
+
   try {
-    await db.execute('DELETE FROM product_variants WHERE product_id = ?', [req.params.id]);
-    await db.execute('DELETE FROM products WHERE id = ?', [req.params.id]);
+    await conn.beginTransaction();
+
+    await conn.execute(`
+      DELETE FROM product_variants WHERE product_id = ?
+    `, [productId]);
+
+    await conn.execute(`
+      DELETE FROM products WHERE id = ?
+    `, [productId]);
+
+    await conn.commit();
     res.json({ success: true });
+
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось удалить товар' });
+    await conn.rollback();
+    console.error('Ошибка удаления товара:', e);
+    res.status(500).json({ error: 'Ошибка удаления товара' });
+  } finally {
+    conn.release();
   }
 });
 
 // === API: Локации ===
 app.get('/api/locations', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT id, name, delivery_cost, free_from_amount FROM locations');
-    res.json(rows);
+    const [locations] = await db.query(`
+      SELECT 
+        id,
+        name,
+        CAST(delivery_cost AS DECIMAL(10,2)) AS delivery_cost,
+        CAST(free_from_amount AS DECIMAL(12,2)) AS free_from_amount
+      FROM locations
+    `);
+    res.json(locations);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось загрузить локации' });
+    console.error('Ошибка загрузки локаций:', e);
+    res.status(500).json({ error: 'Ошибка загрузки данных о доставке' });
   }
 });
 
 // === API: Отзывы ===
 app.get('/api/reviews/:type', async (req, res) => {
-  const t = req.params.type;
-  if (!['pending','approved'].includes(t)) return res.status(400).json({ error: 'Неверный тип' });
-  const table = t === 'pending' ? 'reviews_pending' : 'reviews_approved';
+  const allowedTypes = ['pending', 'approved'];
+  const type = req.params.type;
+  
+  if (!allowedTypes.includes(type)) {
+    return res.status(400).json({ error: 'Неверный тип отзывов' });
+  }
+
   try {
-    const [rows] = await db.query(`SELECT id, author_name, email, phone, rating, comment, created_at, product_id FROM ${table}`);
-    res.json(rows);
+    const [reviews] = await db.query(`
+      SELECT 
+        id,
+        author_name,
+        email,
+        phone,
+        rating,
+        comment,
+        created_at,
+        product_id
+      FROM ${type === 'pending' ? 'reviews_pending' : 'reviews_approved'}
+    `);
+    
+    res.json(reviews);
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось загрузить отзывы' });
+    console.error('Ошибка загрузки отзывов:', e);
+    res.status(500).json({ error: 'Ошибка загрузки отзывов' });
   }
 });
 
 app.post('/api/reviews', async (req, res) => {
   try {
-    const { author_name, email, phone, rating, comment, product_id } = req.body;
-    const [r] = await db.execute(
-      'INSERT INTO reviews_pending (author_name, email, phone, rating, comment, created_at, product_id) VALUES (?, ?, ?, ?, ?, NOW(), ?)',
-      [author_name, email, phone, rating, comment, product_id]
-    );
-    res.status(201).json({ id: r.insertId });
+    const { 
+      author_name,
+      email,
+      phone = null,
+      rating,
+      comment,
+      product_id 
+    } = req.body;
+
+    const [result] = await db.execute(`
+      INSERT INTO reviews_pending (
+        author_name,
+        email,
+        phone,
+        rating,
+        comment,
+        product_id
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `, [author_name, email, phone, rating, comment, product_id]);
+
+    res.status(201).json({ id: result.insertId });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось сохранить отзыв' });
+    console.error('Ошибка создания отзыва:', e);
+    res.status(500).json({ error: 'Ошибка сохранения отзыва' });
   }
 });
 
 app.put('/api/reviews/:id/approve', async (req, res) => {
-  const id = +req.params.id;
+  const reviewId = +req.params.id;
   const conn = await db.getConnection();
+
   try {
     await conn.beginTransaction();
-    const [[rev]] = await conn.query('SELECT * FROM reviews_pending WHERE id = ?', [id]);
-    if (!rev) { await conn.rollback(); return res.status(404).json({ error: 'Отзыв не найден' }); }
-    const { author_name, email, phone, rating, comment, created_at, product_id } = rev;
-    await conn.execute(
-      'INSERT INTO reviews_approved (id, author_name, email, phone, rating, comment, created_at, product_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, author_name, email, phone, rating, comment, created_at, product_id]
-    );
-    await conn.execute('DELETE FROM reviews_pending WHERE id = ?', [id]);
+
+    // Переносим отзыв в утвержденные
+    await conn.execute(`
+      INSERT INTO reviews_approved (
+        author_name,
+        email,
+        phone,
+        rating,
+        comment,
+        created_at,
+        product_id
+      )
+      SELECT 
+        author_name,
+        email,
+        phone,
+        rating,
+        comment,
+        created_at,
+        product_id
+      FROM reviews_pending 
+      WHERE id = ?
+    `, [reviewId]);
+
+    // Удаляем из ожидающих
+    await conn.execute(`
+      DELETE FROM reviews_pending 
+      WHERE id = ?
+    `, [reviewId]);
+
     await conn.commit();
     res.json({ success: true });
+    
   } catch (e) {
     await conn.rollback();
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось одобрить отзыв' });
+    console.error('Ошибка одобрения отзыва:', e);
+    res.status(500).json({ error: 'Ошибка модерации отзыва' });
   } finally {
     conn.release();
   }
 });
 
 app.delete('/api/reviews/:type/:id', async (req, res) => {
+  const allowedTypes = ['pending', 'approved'];
   const { type, id } = req.params;
-  const table = type === 'pending' ? 'reviews_pending' : 'reviews_approved';
+  
+  if (!allowedTypes.includes(type)) {
+    return res.status(400).json({ error: 'Неверный тип отзывов' });
+  }
+
   try {
-    await db.execute(`DELETE FROM ${table} WHERE id = ?`, [id]);
+    await db.execute(`
+      DELETE FROM ${type === 'pending' ? 'reviews_pending' : 'reviews_approved'} 
+      WHERE id = ?
+    `, [id]);
+    
     res.json({ success: true });
+    
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось удалить отзыв' });
+    console.error('Ошибка удаления отзыва:', e);
+    res.status(500).json({ error: 'Ошибка удаления отзыва' });
   }
 });
+
 
 // === API: Заказы ===
 app.get('/api/orders', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM orders ORDER BY created_at DESC');
-    res.json(rows);
+    const [orders] = await db.query(`
+      SELECT 
+        id,
+        status,
+        location_id,
+        customer_phone,
+        customer_fullname,
+        customer_email,
+        payment_method,
+        CAST(delivery_cost AS DECIMAL(10,2)) AS delivery_cost,
+        has_discount,
+        CAST(total_amount AS DECIMAL(12,2)) AS total_amount,
+        created_at
+      FROM orders
+      ORDER BY created_at DESC
+    `);
+    res.json(orders);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось загрузить заказы' });
+    console.error('Ошибка загрузки заказов:', e);
+    res.status(500).json({ error: 'Ошибка получения заказов' });
   }
 });
 
@@ -303,28 +594,164 @@ app.post('/api/orders', async (req, res) => {
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
+    
     const { customer, items, total, delivery_cost, has_discount, status = 'new' } = req.body;
-    const [r] = await conn.execute(
-      'INSERT INTO orders (status, location_id, customer_phone, customer_fullname, customer_email, payment_method, delivery_cost, has_discount, total_amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-      [status, customer.location_id || null, customer.phone, customer.name, customer.email, customer.payment_method || 'pickup', delivery_cost || 0, has_discount ? 1 : 0, total]
-    );
-    const oid = r.insertId;
-    for (const it of items) {
-      await conn.execute(
-        'INSERT INTO order_items (order_id, product_variant_id, quantity, weight, price) VALUES (?, ?, ?, ?, ?)',
-        [oid, it.id, it.quantity, it.weight || 0, it.price]
-      );
+    
+    // Валидация обязательных полей
+    if (!customer?.phone || !customer?.name || !customer?.email) {
+      throw new Error('Не заполнены обязательные поля клиента');
     }
+
+    // Создание заказа
+    const [orderResult] = await conn.execute(`
+      INSERT INTO orders (
+        status,
+        location_id,
+        customer_phone,
+        customer_fullname,
+        customer_email,
+        payment_method,
+        delivery_cost,
+        has_discount,
+        total_amount
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      status,
+      customer.location_id || 1,
+      customer.phone,
+      customer.name,
+      customer.email,
+      customer.payment_method || 'cash',
+      parseFloat(delivery_cost) || 0,
+      has_discount ? 1 : 0,
+      parseFloat(total)
+    ]);
+
+    const orderId = orderResult.insertId;
+
+    // Добавление позиций
+    for (const item of items) {
+      await conn.execute(`
+        INSERT INTO order_items (
+          order_id,
+          product_variant_id,
+          quantity,
+          weight,
+          price
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        orderId,
+        item.id,
+        item.quantity,
+        parseFloat(item.weight) || 0,
+        parseFloat(item.price)
+      ]);
+    }
+
     await conn.commit();
-    res.status(201).json({ id: oid });
+    res.status(201).json({ id: orderId });
+
   } catch (e) {
     await conn.rollback();
-    console.error(e);
-    res.status(500).json({ error: 'Не удалось создать заказ' });
+    console.error('Ошибка создания заказа:', e);
+    res.status(500).json({ error: e.message || 'Ошибка создания заказа' });
   } finally {
     conn.release();
   }
 });
+
+// === API: Быстрые заказы ===
+app.get('/api/quick-orders', async (req, res) => {
+  try {
+    const [quickOrders] = await db.query(`
+      SELECT 
+        id,
+        status,
+        street,
+        house_number,
+        customer_name,
+        CAST(total_amount AS DECIMAL(12,2)) AS total_amount,
+        created_at
+      FROM quick_orders
+      ORDER BY created_at DESC
+    `);
+    res.json(quickOrders);
+  } catch (e) {
+    console.error('Ошибка загрузки быстрых заказов:', e);
+    res.status(500).json({ error: 'Ошибка получения быстрых заказов' });
+  }
+});
+
+app.post('/api/quick-orders', async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const { 
+      street,
+      house_number,
+      customer_name,
+      customer_phone,
+      comment = '',
+      total_amount,
+      status = 'new',
+      items
+    } = req.body;
+
+    // Создание быстрого заказа
+    const [quickOrderResult] = await conn.execute(`
+      INSERT INTO quick_orders (
+        status,
+        street,
+        house_number,
+        customer_name,
+        customer_phone,
+        comment,
+        total_amount
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      status,
+      street,
+      house_number,
+      customer_name,
+      customer_phone,
+      comment,
+      parseFloat(total_amount)
+    ]);
+
+    const quickOrderId = quickOrderResult.insertId;
+
+    // Добавление позиций
+    for (const item of items) {
+      await conn.execute(`
+        INSERT INTO quick_order_items (
+          quick_order_id,
+          product_variant_id,
+          quantity,
+          weight,
+          price
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        quickOrderId,
+        item.id,
+        item.quantity,
+        parseFloat(item.weight) || 0,
+        parseFloat(item.price)
+      ]);
+    }
+
+    await conn.commit();
+    res.status(201).json({ id: quickOrderId });
+
+  } catch (e) {
+    await conn.rollback();
+    console.error('Ошибка создания быстрого заказа:', e);
+    res.status(500).json({ error: e.message || 'Ошибка создания быстрого заказа' });
+  } finally {
+    conn.release();
+  }
+});
+
 
 // === 404 для API ===
 app.use('/api/*', (req, res) => {

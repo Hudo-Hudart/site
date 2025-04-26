@@ -1,3 +1,52 @@
+// Карусель акций на главной странице
+class Carousel {
+    constructor() {
+      this.carousel = document.querySelector('.carousel');
+      if (!this.carousel) return;
+      this.slides = this.carousel.querySelectorAll('.slide');
+      this.dotsContainer = document.querySelector('.carousel-dots');
+      this.currentIndex = 0;
+      this.interval = null;
+      this.initDots();
+      this.startAutoPlay();
+      this.addEventListeners();
+      this.goToSlide(0);
+    }
+  
+    initDots() {
+      this.dotsContainer.innerHTML = '';
+      this.slides.forEach((_, i) => {
+        const dot = document.createElement('span');
+        dot.className = `dot${i === 0 ? ' active' : ''}`;
+        dot.addEventListener('click', () => this.goToSlide(i));
+        this.dotsContainer.appendChild(dot);
+      });
+      this.dots = this.dotsContainer.querySelectorAll('.dot');
+    }
+  
+    goToSlide(i) {
+      this.currentIndex = i;
+      this.carousel.style.transform = `translateX(-${i * 100}%)`;
+      this.dots.forEach(d => d.classList.remove('active'));
+      this.dots[i].classList.add('active');
+    }
+  
+    nextSlide() {
+      this.goToSlide((this.currentIndex + 1) % this.slides.length);
+    }
+  
+    startAutoPlay() {
+      clearInterval(this.interval);
+      this.interval = setInterval(() => this.nextSlide(), 5000);
+    }
+  
+    addEventListeners() {
+      this.carousel.addEventListener('mouseenter', () => clearInterval(this.interval));
+      this.carousel.addEventListener('mouseleave', () => this.startAutoPlay());
+    }
+  }
+  
+
 // Базовый класс для избранного, сравнения и корзины
 class Collection {
     constructor(key) {
