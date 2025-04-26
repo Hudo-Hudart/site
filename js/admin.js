@@ -9,11 +9,11 @@ const checkUnauthorized = (response) => {
   };
   
   // Используйте в каждом fetch:
-  fetch(url, options)
-    .then(response => {
-      if (checkUnauthorized(response)) return;
+  //fetch(url, options)
+    //.then(response => {
+      //if (checkUnauthorized(response)) return;
       // остальная обработка
-    });
+    //});
 
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Переписанная функция сохранения отзыва
     const saveReview = async (reviewData) => {
         try {
-            const response = await fetch(CONFIG.REVIEWS_URL, {
+            const response = await fetch(CONFIG.SAVE_REVIEWS_URL, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
