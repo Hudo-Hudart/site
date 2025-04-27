@@ -838,9 +838,12 @@ app.post('/api/quick-orders', async (req, res) => {
 
 
 // === 404 для API ===
-app.use('/api/*', (req, res) => {
+// этот middleware сработает для любого запроса, начинающегося с /api, 
+// но без проблем с парсингом паттерна
+app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API route not found' });
 });
+
 
 // === Запуск сервера ===
 const PORT = process.env.PORT || 3000;

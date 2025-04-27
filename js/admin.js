@@ -3,16 +3,17 @@ console.log('Токен:', localStorage.getItem('token'));
 
 const logApiResponse = async (url, options) => {
     try {
-        const start = Date.now();
-        const res = await logApiResponse(url, options);
-        const time = Date.now() - start;
-        console.log(`API ${url} → ${res.status} (${time}ms)`);
-        return res;
+      const start = Date.now();
+      const res = await fetch(url, options);
+      const time = Date.now() - start;
+      console.log(`API ${url} → ${res.status} (${time}ms)`);
+      return res;
     } catch (error) {
-        console.error(`API ${url} → ERROR:`, error);
-        throw error;
+      console.error(`API ${url} → ERROR:`, error);
+      throw error;
     }
-};
+  };
+  
 
 const checkUnauthorized = (response) => {
     if (response.status === 401) {
