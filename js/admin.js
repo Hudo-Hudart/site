@@ -1,3 +1,19 @@
+console.log('Текущий пользователь:', JSON.parse(localStorage.getItem('currentUser')));
+console.log('Токен:', localStorage.getItem('token'));
+
+const logApiResponse = async (url, options) => {
+    try {
+        const start = Date.now();
+        const res = await logApiResponse(url, options);
+        const time = Date.now() - start;
+        console.log(`API ${url} → ${res.status} (${time}ms)`);
+        return res;
+    } catch (error) {
+        console.error(`API ${url} → ERROR:`, error);
+        throw error;
+    }
+};
+
 const checkUnauthorized = (response) => {
     if (response.status === 401) {
       localStorage.removeItem('token');
@@ -9,7 +25,7 @@ const checkUnauthorized = (response) => {
   };
   
   // Используйте в каждом fetch:
-  //fetch(url, options)
+  //fetch(url, options)a
     //.then(response => {
       //if (checkUnauthorized(response)) return;
       // остальная обработка
@@ -44,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Переписанная функция сохранения отзыва
     const saveReview = async (reviewData) => {
         try {
-            const response = await fetch(CONFIG.SAVE_REVIEWS_URL, {
+            const response = await logApiResponse(CONFIG.SAVE_REVIEWS_URL, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -91,14 +107,14 @@ document.addEventListener('DOMContentLoaded', () => {
           } //
     };
 
-   // const checkAdminAccess = () => {
-   //     const user = JSON.parse(localStorage.getItem('currentUser'));
-   //     if (!user || user.role !== 'admin') {
-   //         window.location.href = '/login.html';
-   //         return false;
-   //     }
-   //     return true;
-   // };
+    const checkAdminAccess = () => {
+        const user = JSON.parse(localStorage.getItem('currentUser'));
+        if (!user || user.role !== 'admin') {
+          window.location.href = '/login.html';
+          return false;
+        }
+        return true;
+      };
 
     // Обновленная загрузка изображений
     const uploadImage = async (file) => {
@@ -106,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('image', file);
 
         try {
-            const response = await fetch(CONFIG.UPLOAD_IMAGE_URL, {
+            const response = await logApiResponse(CONFIG.UPLOAD_IMAGE_URL, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -132,6 +148,29 @@ document.addEventListener('DOMContentLoaded', () => {
             quickOrders: [...state.quickOrders]
         };
     
+        async function loadReviews() {
+            try {
+              const headers = {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+              };
+              const [pendingRes, approvedRes] = await Promise.all([
+                fetch(CONFIG.PENDING_REVIEWS_URL,  { headers }),
+                fetch(CONFIG.APPROVED_REVIEWS_URL, { headers })
+              ]);
+              if (!pendingRes.ok || !approvedRes.ok) {
+                throw new Error('Ошибка загрузки отзывов');
+              }
+              state.pendingReviews  = await pendingRes.json();
+              state.approvedReviews = await approvedRes.json();
+            } catch (err) {
+              console.error('loadReviews error:', err);
+              state.pendingReviews  = [];
+              state.approvedReviews = [];
+              showError(err.message);
+            }
+          }
+
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -159,57 +198,57 @@ document.addEventListener('DOMContentLoaded', () => {
                     const error = await response.json();
                     throw new Error(error.message || `HTTP ${response.status} для ${type}`);
                 }
-    
+            
                 const data = await response.json();
                 
-                // Нормализация данных для фронтенда
                 return data.map(order => {
-                    // Общие поля для обоих типов заказов
+                    // Общие поля для всех заказов
                     const base = {
                         id: order.id,
                         status: order.status,
-                        total: parseFloat(order.total_amount),
+                        total: parseFloat(order.total_amount || 0),
                         created_at: order.created_at
                     };
-    
+            
+                    // Обработка обычных заказов
                     if (type === 'обычных заказов') {
                         return {
                             ...base,
                             customer: {
-                                first_name: order.customer_fullname?.split(' ')[0] || '',
+                                first_name: order.customer_fullname?.split(' ')[0] || 'Не указано',
                                 last_name: order.customer_fullname?.split(' ').slice(1).join(' ') || '',
-                                phone: order.customer_phone,
-                                email: order.customer_email,
-                                payment_method: order.payment_method,
-                                delivery_cost: parseFloat(order.delivery_cost)
+                                phone: order.customer_phone || '',
+                                email: order.customer_email || '',
+                                payment_method: order.payment_method || 'Не выбран',
+                                delivery_cost: parseFloat(order.delivery_cost || 0)
                             },
-                            items: order.items?.map(item => ({
+                            items: (order.items || []).map(item => ({
                                 id: item.product_variant_id,
-                                name: item.title, // Предполагаем, что есть JOIN с продуктами
-                                price: parseFloat(item.price),
-                                quantity: item.quantity,
-                                weight: parseFloat(item.weight)
-                            })) || []
+                                name: item.title || `Товар #${item.product_variant_id}`,
+                                price: parseFloat(item.price || 0),
+                                quantity: item.quantity || 1,
+                                weight: parseFloat(item.weight || 0)
+                            }))
                         };
                     }
-    
-                    // Для быстрых заказов
+            
+                    // Обработка быстрых заказов
                     return {
                         ...base,
                         customer: {
-                            name: order.customer_name,
-                            phone: order.customer_phone,
-                            street: order.street,
-                            house: order.house_number,
-                            comment: order.comment
+                            name: order.customer_name || 'Не указано',
+                            phone: order.customer_phone || '',
+                            street: order.street || '',
+                            house: order.house_number || '',
+                            comment: order.comment || ''
                         },
-                        items: order.items?.map(item => ({
+                        items: (order.items || []).map(item => ({
                             id: item.product_variant_id,
-                            name: item.title,
-                            price: parseFloat(item.price),
-                            quantity: item.quantity,
-                            weight: parseFloat(item.weight)
-                        })) || []
+                            name: item.title || `Товар #${item.product_variant_id}`,
+                            price: parseFloat(item.price || 0),
+                            quantity: item.quantity || 1,
+                            weight: parseFloat(item.weight || 0)
+                        }))
                     };
                 });
             };
@@ -399,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? `${CONFIG.ORDERS_DATA_URL}/${orderId}`
                 : `${CONFIG.QUICK_ORDERS_DATA_URL}/${orderId}`;
     
-            const response = await fetch(endpoint, {
+            const response = await logApiResponse(endpoint, {
                 method: 'PATCH',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -472,99 +511,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
     // Инициализация
-    const init = async () => {
-        const user = JSON.parse(localStorage.getItem('currentUser'));
-        if (!user || user.role !== 'admin') {
-        window.location.href = '/login.html';
-        }
-        await loadInitialData();
-        await loadOrders();
-        await loadReviews(); // Добавлена загрузка отзывов
-        setupOrderListeners();
-        setupEventListeners();
-        renderAll();
-        renderOrdersSection('full');
-        renderOrdersSection('quick-orders');
-        updateCategorySelects();
-        renderReviews(); // Добавлен вызов рендера отзывов
-};
+
     // Загрузка данных
     const loadInitialData = async () => {
         try {
-            // Добавляем заголовки авторизации
             const headers = {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
-              };
+            };
     
-            // Загрузка продуктов с базовой информацией
-            const productsRes = await fetch(CONFIG.PRODUCTS_DATA_URL, { headers });
-            if (!productsRes.ok) throw new Error(`HTTP ${productsRes.status} - Products load failed`);
-            const productsData = await productsRes.json();
-    
-            // Параллельная загрузка вариантов для всех продуктов
-            const productsWithVariants = await Promise.all(
-                productsData.map(async product => {
-                    try {
-                        const variantsRes = await fetch(
-                            `${CONFIG.PRODUCTS_DATA_URL}/${product.id}/variants`,
-                            { headers }
-                        );
-                        
-                        if (!variantsRes.ok) return { ...product, variants: [] };
-                        
-                        const variants = await variantsRes.json();
-                        return {
-                            ...product,
-                            variants: variants.map(v => ({
-                                id: v.variant_id,
-                                weight: parseFloat(v.weight),
-                                price: parseFloat(v.price),
-                                productId: v.product_id
-                            }))
-                        };
-                    } catch (e) {
-                        console.error(`Error loading variants for product ${product.id}:`, e);
-                        return { ...product, variants: [] };
-                    }
-                })
-            );
+            // Загрузка продуктов
+            const productsRes = await logApiResponse(CONFIG.PRODUCTS_DATA_URL, { headers });
+            if (checkUnauthorized(productsRes)) return;
+            if (!productsRes.ok) throw new Error(`Ошибка загрузки товаров: ${productsRes.status}`);
+            const productsData = (await productsRes.json()).data || [];
     
             // Загрузка категорий
-            const categoriesRes = await fetch(CONFIG.CATEGORIES_DATA_URL, { headers });
-            if (!categoriesRes.ok) throw new Error(`HTTP ${categoriesRes.status} - Categories load failed`);
+            const categoriesRes = await logApiResponse(CONFIG.CATEGORIES_DATA_URL, { headers });
+            if (checkUnauthorized(categoriesRes)) return;
+            if (!categoriesRes.ok) throw new Error(`Ошибка загрузки категорий: ${categoriesRes.status}`);
             const categoriesData = await categoriesRes.json();
     
-            // Обновление состояния с валидацией
-            state.products = productsWithVariants.filter(p => 
-                p.id && p.title && p.category_id && !isNaN(p.rating)
-            );
-            
-            state.flatCategories = categoriesData.filter(c => 
-                c.id && c.name && (c.parent_id === null || typeof c.parent_id === 'number')
-            );
-            
-            state.categories = buildCategoryTree(state.flatCategories);
+            // Обновление состояния
+            state.products = transformProducts(productsData);
+            state.flatCategories = categoriesData;
+            state.categories = buildCategoryTree(categoriesData);
+    
+            console.log('Данные загружены:', { 
+                products: state.products.slice(0, 3), 
+                categories: state.categories.slice(0, 3) 
+            });
     
         } catch (error) {
-            console.error('Initial data loading failed:', error);
-            showError(`Critical error: ${error.message}`);
+            console.error('Ошибка загрузки:', error);
+            showError(`Ошибка инициализации: ${error.message}`);
             throw error;
         }
     };
+    
     const transformProducts = (products) => {
         return products.map(product => ({
             id: product.id,
             title: product.title,
             categoryId: product.category_id,
-            brand: product.brand,
-            ageGroup: product.age_group,
-            sizeGroup: product.size_group,
-            rating: product.rating,
-            image: product.image_url,
-            description: product.description,
-            sku: product.sku,
-            variants: product.variants || []
+            brand: product.brand || 'Не указан',
+            ageGroup: product.age_group || '',
+            sizeGroup: product.size_group || '',
+            rating: parseFloat(product.rating) || 0,
+            image: product.imageUrl || '/images/placeholder.webp',
+            description: product.description || '',
+            sku: product.sku || `SKU-${product.id}`,
+            variants: (product.variants || []).map(v => ({
+                id: v.variant_id,
+                weight: parseFloat(v.weight),
+                price: parseFloat(v.price),
+                productId: product.id
+            }))
         }));
     };
     
@@ -622,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     
         try {
-            const response = await fetch(CONFIG.CATEGORIES_DATA_URL, {
+            const response = await logApiResponse(CONFIG.CATEGORIES_DATA_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -637,7 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
     
             // Получаем актуальный список категорий после создания
-            const categoriesResponse = await fetch(CONFIG.CATEGORIES_DATA_URL);
+            const categoriesResponse = await logApiResponse(CONFIG.CATEGORIES_DATA_URL);
             if (!categoriesResponse.ok) throw new Error('Ошибка загрузки категорий');
             const updatedCategories = await categoriesResponse.json();
             
@@ -694,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             
                             // Удаляем категории через API
                             await Promise.all(idsToRemove.map(id => 
-                                fetch(`${CONFIG.СATEGORIES_DATA_URL}/${id}`, {
+                                fetch(`${CONFIG.CATEGORIES_DATA_URL}/${id}`, {
                                     method: 'DELETE',
                                     headers: {
                                         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -737,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (!confirm('Удалить товар?')) return;
                         
                         try {
-                            const response = await fetch(`${CONFIG.PRODUCTS_DATA_URL}/${productId}`, {
+                            const response = await logApiResponse(`${CONFIG.PRODUCTS_DATA_URL}/${productId}`, {
                                 method: 'DELETE',
                                 headers: {
                                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -750,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                 
                             // Обновляем список товаров
-                            const productsRes = await fetch(CONFIG.PRODUCTS_DATA_URL);
+                            const productsRes = await logApiResponse(CONFIG.PRODUCTS_DATA_URL);
                             const updatedProducts = await productsRes.json();
                             state.products = transformProducts(updatedProducts);
                             
@@ -866,7 +868,7 @@ const handleProductSubmit = async (e) => {
         }
 
         // Отправка данных
-        const response = await fetch(CONFIG.PRODUCTS_DATA_URL, {
+        const response = await logApiResponse(CONFIG.PRODUCTS_DATA_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -880,7 +882,7 @@ const handleProductSubmit = async (e) => {
         }
 
         // Обновление списка товаров
-        const productsRes = await fetch(CONFIG.PRODUCTS_DATA_URL);
+        const productsRes = await logApiResponse(CONFIG.PRODUCTS_DATA_URL);
         const updatedProducts = await productsRes.json();
         state.products = transformProducts(updatedProducts);
         
@@ -934,14 +936,14 @@ const productData = {
 try {
     // Отправка данных через FormData для поддержки файлов
     const formPayload = new FormData();
-    formPayload.append('data', JSON.stringify(productData));
+  formPayload.append('data', JSON.stringify(productData));
     
     const imageFile = formData.get('image');
     if (imageFile) {
         formPayload.append('image', imageFile);
     }
 
-    const response = await fetch(CONFIG.PRODUCTS_DATA_URL, {
+    const response = await logApiResponse(CONFIG.PRODUCTS_DATA_URL, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -1008,106 +1010,146 @@ try {
     const handleSearch = async (e) => {
         const term = e.target.value.toLowerCase();
         try {
-            const response = await fetch(`${CONFIG.PRODUCTS_DATA_URL}?search=${encodeURIComponent(term)}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Ошибка поиска');
-            const filteredProducts = await response.json();
-            renderProducts(filteredProducts);
+          const response = await logApiResponse(
+            `${CONFIG.PRODUCTS_DATA_URL}?search=${encodeURIComponent(term)}`,
+            { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
+          );
+          if (!response.ok) throw new Error('Ошибка поиска');
+      
+          const searchJson = await response.json();
+          const filteredProducts = Array.isArray(searchJson) ? searchJson : searchJson.data;
+          renderProducts(filteredProducts);
         } catch (error) {
-            console.error('Ошибка поиска:', error);
-            showError('Ошибка при выполнении поиска');
+          console.error('Ошибка поиска:', error);
+          showError('Ошибка при выполнении поиска');
+        }
+      };
+      
+    
+      const renderProducts = (products = state.products) => {
+        try {
+            const categoryMap = state.flatCategories.reduce((acc, c) => {
+                acc[c.id] = c.name;
+                return acc;
+            }, {});
+    
+            DOM.productTableBody.innerHTML = products.map(product => {
+                const firstVariant = product.variants?.[0] || {};
+                return `
+                    <tr class="product-item" data-id="${product.id}">
+                        <td>${product.id}</td>
+                        <td>${product.title || 'Без названия'}</td>
+                        <td>${categoryMap[product.categoryId] || 'Без категории'}</td>
+                        <td>${firstVariant.price ? parseFloat(firstVariant.price).toFixed(2) : '0.00'} ₽</td>
+                        <td>
+                            <button class="edit-product-btn" data-id="${product.id}">
+                                Редактировать
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('') || '<tr><td colspan="5">Нет товаров</td></tr>';
+    
+            console.log('Отрендерено товаров:', products.length);
+            
+        } catch (error) {
+            console.error('Ошибка рендера товаров:', error);
+            DOM.productTableBody.innerHTML = '<tr><td colspan="5">Ошибка загрузки</td></tr>';
         }
     };
     
-    const renderProducts = (products = state.products) => {
-        const sanitize = (str) => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        
-        DOM.productTableBody.innerHTML = products.map(product => {
-            const category = state.flatCategories.find(c => c.id === product.category_id);
-            const variantsInfo = product.variants.map(v => 
-                `${v.weight} кг - ${v.price.toFixed(2)} ₽`
-            ).join('<br>');
-    
-            return `
-            <tr class="product-item" data-id="${product.id}">
-                <td>${product.id}</td>
-                <td>
-                    <img src="${product.image_url || '/images/placeholder.png'}" 
-                         class="product-thumb" 
-                         alt="${sanitize(product.title)}">
-                </td>
-                <td>${sanitize(product.title)}</td>
-                <td>${product.sku || '—'}</td>
-                <td>${category?.name || 'Без категории'}</td>
-                <td>${variantsInfo || '—'}</td>
-                <td>
-                    ${product.brand ? `Бренд: ${product.brand}<br>` : ''}
-                    ${product.age_group ? `Возраст: ${product.age_group}<br>` : ''}
-                    ${product.size_group ? `Размер: ${product.size_group}` : ''}
-                </td>
-                <td><button class="delete-button">Удалить</button></td>
-            </tr>
-            `;
-        }).join('');
+    // Вспомогательная функция для экранирования HTML
+    const escapeHTML = (str) => {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     };
+      
     
-    const handleReviewAction = async (action, reviewId) => {
+      const handleReviewAction = async (action, reviewId) => {
         if (!checkAdminAccess()) {
             showError('Доступ запрещен!');
             return;
         }
     
         try {
-            const reviewType = state.pendingReviews.some(r => r.id === reviewId) ? 'pending' : 'approved';
-            
+            // Определяем текущий статус отзыва
+            const isPending = state.pendingReviews.some(r => r.id === reviewId);
+            const reviewType = isPending ? 'pending' : 'approved';
+    
+            // Подтверждение для деструктивных действий
             if (action === 'delete' && !confirm('Удалить отзыв безвозвратно?')) return;
     
+            // Формируем запросы в зависимости от действия
             let response;
             switch(action) {
                 case 'approve':
-                    response = await fetch(`/api/reviews/${reviewId}/approve`, {
+                    if (!isPending) throw new Error('Можно одобрять только отзывы из ожидания');
+                    response = await logApiResponse(`${CONFIG.SAVE_REVIEWS_URL}/${reviewId}/approve`, {
                         method: 'PUT',
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`
                         }
                     });
                     break;
-                    
+    
                 case 'delete':
-                    response = await fetch(`/api/reviews/${reviewType}/${reviewId}`, {
+                    response = await logApiResponse(`${CONFIG.SAVE_REVIEWS_URL}/${reviewType}/${reviewId}`, {
                         method: 'DELETE',
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`
                         }
                     });
                     break;
-                    
+    
                 default:
                     throw new Error('Неизвестное действие');
             }
     
+            // Проверка ответа сервера
+            if (checkUnauthorized(response)) return;
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.error || 'Ошибка операции');
+                throw new Error(error.message || 'Ошибка операции');
             }
     
-            // Обновляем данные с сервера
-            const [pendingRes, approvedRes] = await Promise.all([
-                fetch('/api/reviews/pending'),
-                fetch('/api/reviews/approved')
-            ]);
-            
-            state.pendingReviews = await pendingRes.json();
-            state.approvedReviews = await approvedRes.json();
-            
+            // Локальное обновление состояния без перезагрузки
+            if (action === 'approve') {
+                const approvedReview = state.pendingReviews.find(r => r.id === reviewId);
+                state.pendingReviews = state.pendingReviews.filter(r => r.id !== reviewId);
+                state.approvedReviews.push(approvedReview);
+            } else {
+                if (isPending) {
+                    state.pendingReviews = state.pendingReviews.filter(r => r.id !== reviewId);
+                } else {
+                    state.approvedReviews = state.approvedReviews.filter(r => r.id !== reviewId);
+                }
+            }
+    
+            // Обновление счетчиков и отображения
+            DOM.reviewCounters.pending.textContent = state.pendingReviews.length;
+            DOM.reviewCounters.approved.textContent = state.approvedReviews.length;
             renderReviews();
     
         } catch (error) {
-            console.error('Ошибка:', error);
-            showError(error.message);
+            console.error('Ошибка модерации:', error);
+            showError(`Ошибка: ${error.message}`);
+            
+            // Восстановление через перезагрузку данных
+            try {
+                const [pendingRes, approvedRes] = await Promise.all([
+                    fetch(CONFIG.PENDING_REVIEWS_URL),
+                    fetch(CONFIG.APPROVED_REVIEWS_URL)
+                ]);
+                
+                state.pendingReviews = await pendingRes.json();
+                state.approvedReviews = await approvedRes.json();
+                renderReviews();
+                
+            } catch (reloadError) {
+                console.error('Ошибка восстановления:', reloadError);
+                showError('Критическая ошибка! Перезагрузите страницу');
+            }
         }
     };       // Обновление состояния отзывов через API
     state.pendingReviews = pending;
@@ -1116,7 +1158,7 @@ try {
     try {
         // Для approve: отправка PUT запроса
         if (action === 'approve') {
-            const response = await fetch(`/api/reviews/${reviewId}/approve`, {
+            const response = await logApiResponse(`/api/reviews/${reviewId}/approve`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -1128,7 +1170,7 @@ try {
         // Для delete: отправка DELETE запроса
         if (action === 'delete') {
             const type = originalPending.some(r => r.id === reviewId) ? 'pending' : 'approved';
-            const response = await fetch(`/api/reviews/${type}/${reviewId}`, {
+            const response = await logApiResponse(`/api/reviews/${type}/${reviewId}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -1190,7 +1232,7 @@ try {
                 const formData = new FormData(e.target);
                 
                 try {
-                    const response = await fetch('/api/reviews', {
+                    const response = await logApiResponse('/api/reviews', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1246,7 +1288,7 @@ try {
                             ? '/api/orders' 
                             : '/api/quick-orders';
                         
-                        const response = await fetch(endpoint, {
+                        const response = await logApiResponse(endpoint, {
                             headers: {
                                 'Authorization': `Bearer ${localStorage.getItem('token')}`
                             }
@@ -1284,36 +1326,65 @@ try {
     
     const renderAll = async () => {
         try {
-            const [productsRes, categoriesRes, pendingRes, approvedRes, ordersRes, quickOrdersRes] = 
-                await Promise.all([
-                    fetch('/api/products'),
-                    fetch('/api/categories'),
-                    fetch('/api/reviews/pending'),
-                    fetch('/api/reviews/approved'),
-                    fetch('/api/orders'),
-                    fetch('/api/quick-orders')
-                ]);
-    
-            state.products = transformProducts(await productsRes.json());
-            state.flatCategories = await categoriesRes.json();
-            state.categories = buildCategoryTree(state.flatCategories);
-            state.pendingReviews = await pendingRes.json();
-            state.approvedReviews = await approvedRes.json();
-            state.orders = await ordersRes.json();
-            state.quickOrders = await quickOrdersRes.json();
-    
-            renderCategories();
-            renderProducts();
-            renderReviews();
-            renderOrdersSection('full', state.orders);
-            renderOrdersSection('quick', state.quickOrders);
-            
+          const [
+            productsRes,
+            categoriesRes,
+            pendingRes,
+            approvedRes,
+            ordersRes,
+            quickOrdersRes
+          ] = await Promise.all([
+            fetch(CONFIG.PRODUCTS_DATA_URL),
+            fetch(CONFIG.CATEGORIES_DATA_URL),
+            fetch(CONFIG.PENDING_REVIEWS_URL),
+            fetch(CONFIG.APPROVED_REVIEWS_URL),
+            fetch(CONFIG.ORDERS_DATA_URL),
+            fetch(CONFIG.QUICK_ORDERS_DATA_URL)
+          ]);
+      
+          // Продукты
+          const productsJson = await productsRes.json();
+          const productsData = Array.isArray(productsJson) ? productsJson : productsJson.data;
+          state.products       = transformProducts(productsData);
+      
+          // Остальные сущности
+          state.flatCategories = await categoriesRes.json();
+          state.categories     = buildCategoryTree(state.flatCategories);
+          state.pendingReviews = await pendingRes.json();
+          state.approvedReviews= await approvedRes.json();
+          state.orders         = await ordersRes.json();
+          state.quickOrders    = await quickOrdersRes.json();
+      
+          // Рендер всех табов
+          renderCategories();
+          renderProducts();
+          renderReviews();
+          renderOrdersSection('full');
+          renderOrdersSection('quick-orders');
+      
         } catch (error) {
-            console.error('Ошибка инициализации:', error);
-            showError('Ошибка загрузки данных');
+          console.error('Ошибка инициализации:', error);
+          showError('Ошибка загрузки данных');
         }
-    };
+      };
+      
     
+      async function init() {
+        const user = JSON.parse(localStorage.getItem('currentUser'));
+        if (!user || user.role !== 'admin') {
+            window.location.href = '/login.html';
+            return;
+        }
+        await loadInitialData();
+        await loadOrders();
+        await loadReviews();
+        setupOrderListeners();
+        setupEventListeners();
+        await renderAll();
+        updateCategorySelects();
+        renderReviews();
+    }
+
     init();
 }
 }); // ← Добавлено в самом конце файла

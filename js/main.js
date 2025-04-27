@@ -557,14 +557,14 @@ class ReviewForm {
 
     async submitForm(e) {
         e.preventDefault(); if (!this.validateForm()) return;
-        const productId = this.form.dataset.productId || null;
+        //const productId = this.form.dataset.productId || null;
         const payload = {
             author_name: this.form.name.value.trim(),
             email: this.form.email.value.trim(),
             phone: this.form.phone.value.trim() || null,
             rating: +this.ratingInput.value,
             comment: this.form.content.value.trim(),
-            product_id: +productId
+            product_id: 1
         };
         try {
             const res = await fetch('/api/reviews', {

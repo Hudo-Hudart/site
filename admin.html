@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Админ-панель - ZooMarket</title>
     <link rel="stylesheet" href="/css/style.css">
-    <link rel="stylesheet" href="/css/admin.css">
+    <!--<link rel="stylesheet" href="/css/admin.css">-->
 </head>
 <body>
     <script src="/js/admin-auth-check.js"></script>
@@ -61,7 +61,7 @@
             <option value="">Выберите категорию</option>
         </select>
         <input type="text" class="admin-form-input" 
-               name="name" 
+               name="title" 
                placeholder="Название товара" 
                required>
         <input type="number" class="admin-form-input" 
@@ -195,12 +195,12 @@
 </section>
 
     </main>
-
+    <script src="/js/auth.js"></script> <!-- Добавьте эту строку -->
     <script src="/js/admin-auth-check.js"></script>
     <script src="/js/admin.js"></script>
     <script src="/js/main.js"></script>
     <script src="/js/catalog.js"></script>
     <script src="/js/cart.js"></script>
-    <script src="/data/products.js"></script> <!-- Здесь должен быть корректный путь -->
+  <!--<script src="/data/products.js"></script> Здесь должен быть корректный путь -->
 </body>
 </html>

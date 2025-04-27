@@ -157,23 +157,7 @@
             </div>
         </header>
 
-        <div id="loginModal" class="modal">
-            <div class="modal-content">
-                <span class="close">&times;</span>
-                <h2>Вход в аккаунт</h2>
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label>Email:</label>
-                        <input type="email" id="loginEmail" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Пароль:</label>
-                        <input type="password" id="loginPassword" required>
-                    </div>
-                    <button type="submit">Войти</button>
-                </form>
-            </div>
-        </div>
+        
 
     <!-- Основная навигация -->
     <!-- Основная навигация -->
@@ -292,24 +276,26 @@
     <script src="/js/catalog.js"></script>
     <script src="/js/auth.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const form = document.getElementById('loginForm');
-            
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                try {
-                    await authService.login(
-                        document.getElementById('loginEmail').value,
-                        document.getElementById('loginPassword').value
-                    );
-                    window.location.href = '/index.html'; // Фиксированное перенаправление
-                } catch (error) {
-                    const errorEl = document.getElementById('loginError');
-                    errorEl.textContent = error.message;
-                    errorEl.style.display = 'block';
-                }
-            });
-        });
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  const email = document.getElementById('loginEmail');
+  const password = document.getElementById('loginPassword');
+  const errorEl = document.getElementById('loginError');
+
+  try {
+    const user = await authService.login(email.value, password.value);
+    
+    if (user.role === 'admin') {
+      window.location.href = '/admin.html';
+    } else {
+      window.location.href = '/index.html';
+    }
+  } catch (error) {
+    errorEl.textContent = error.message;
+    errorEl.style.display = 'block';
+  }
+});
     </script>
 </body>
 </html>
