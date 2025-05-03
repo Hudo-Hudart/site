@@ -1,9 +1,11 @@
 require('dotenv').config();
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const cors = require('cors');
 const mysql = require('mysql2');
+const sharp = require('sharp');
 
 // === Настройка MySQL через пул соединений ===
 const db = mysql.createPool({
@@ -22,9 +24,11 @@ const app = express();
 app.use(cors({
   origin: 'http://localhost:3000',
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'multipart/form-data']
 }));
 app.use(express.json());
+// После строки с app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Добавьте эту строку
 
 
 
@@ -37,9 +41,60 @@ app.use('/images', express.static(path.join(PROJECT_ROOT, 'images')));
 app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public', 'uploads')));
 
 // === Multer для загрузки изображений ===
+
+
+
+
+const categoriesStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(PROJECT_ROOT, 'public', 'images', 'categories');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `temp_${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
+
+const categoriesUpload = multer({ 
+  storage: categoriesStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
 const upload = multer({
   dest: path.join(PROJECT_ROOT, 'public', 'uploads'),
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
+
+// В начало server.js добавить конфигурацию
+const CAROUSEL_CONFIG = {
+  UPLOAD_DIR: path.join(PROJECT_ROOT, 'public', 'images', 'carousel'),
+  TARGET_WIDTH: 1920,
+  TARGET_HEIGHT: 1080,
+  QUALITY: 80,
+  FORMAT: 'webp'
+};
+
+// Создать директорию при старте
+fs.mkdirSync(CAROUSEL_CONFIG.UPLOAD_DIR, { recursive: true });
+
+// Настройка Multer для карусели
+const carouselStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, CAROUSEL_CONFIG.UPLOAD_DIR);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `temp_${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
+
+const carouselUpload = multer({
+  storage: carouselStorage,
+ // limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    cb(null, allowedMimes.includes(file.mimetype));
+  }
 });
 
 // === HTML-страницы (SPA) ===
@@ -53,7 +108,7 @@ const htmlRoutes = [
   '/product', '/product.html',
   '/new-order', '/new-order.html',
   '/favorite', '/favorite.html',
-  '/order-success', '/order-success.html'
+  '/order-success', '/index.html'
 ];
 htmlRoutes.forEach(route => {
   app.get(route, (req, res) => {
@@ -124,8 +179,13 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/categories', async (req, res) => {
   try {
     const [rows] = await db.query(`
-      SELECT id, name, parent_id 
+      SELECT 
+        id, 
+        name, 
+        parent_id,
+        CONCAT('/images/categories/', id, '.webp') AS iconUrl
       FROM categories
+      ORDER BY parent_id ASC, name ASC
     `);
     res.json(rows);
   } catch (e) {
@@ -134,20 +194,57 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-app.post('/api/categories', async (req, res) => {
+app.post('/api/categories', categoriesUpload.single('image'), async (req, res) => {
+  const conn = await db.getConnection();
   try {
+    await conn.beginTransaction();
+
     const { name, parent_id } = req.body;
     
-    const [result] = await db.execute(`
-      INSERT INTO categories (name, parent_id)
-      VALUES (?, ?)
-    `, [name, parent_id || null]);
-    
-    res.status(201).json({ id: result.insertId });
-    
+    // Создаем категорию
+    const [result] = await conn.execute(
+      'INSERT INTO categories (name, parent_id) VALUES (?, ?)',
+      [name, parent_id || null]
+    );
+    const categoryId = result.insertId;
+
+    // Обработка изображения
+    if (req.file) {
+      const tempPath = req.file.path;
+      const webpPath = path.join(
+        path.dirname(tempPath),
+        `${categoryId}.webp`
+      );
+
+      // Конвертируем в WebP
+      await sharp(tempPath)
+        .toFormat('webp')
+        .toFile(webpPath);
+
+      // Удаляем временный файл
+      await fs.promises.unlink(tempPath);
+
+      // Обновляем запись в БД
+      await conn.execute(
+        'UPDATE categories SET image_url = ? WHERE id = ?',
+        [`/images/categories/${categoryId}.webp`, categoryId]
+      );
+    }
+
+    await conn.commit();
+    res.status(201).json({ id: categoryId });
   } catch (e) {
+    await conn.rollback();
+    
+    // Удаляем временный файл при ошибке
+    if (req.file) {
+      await fs.promises.unlink(req.file.path).catch(console.error);
+    }
+
     console.error('Ошибка создания категории:', e);
     res.status(500).json({ error: 'Ошибка создания категории' });
+  } finally {
+    conn.release();
   }
 });
 
@@ -174,11 +271,19 @@ app.delete('/api/categories/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    await db.execute(`
-      DELETE FROM categories 
-      WHERE id = ?
-    `, [id]);
+    // Проверка на дочерние категории
+    const [children] = await db.query(
+      'SELECT id FROM categories WHERE parent_id = ?',
+      [id]
+    );
     
+    if (children.length > 0) {
+      return res.status(400).json({ 
+        error: 'Нельзя удалить категорию с дочерними элементами' 
+      });
+    }
+
+    await db.execute('DELETE FROM categories WHERE id = ?', [id]);
     res.json({ success: true });
     
   } catch (e) {
@@ -191,101 +296,153 @@ app.delete('/api/categories/:id', async (req, res) => {
 // === API: Товары ===
 app.get('/api/products', async (req, res) => {
   try {
-    // 1) Считываем параметры фильтрации и пагинации из query
     const {
-      category   = '',
-      brand      = '',
-      ageGroup   = '',
-      sizeGroup  = '',
-      page       = 1,
-      perPage    = 20
+      category = '',
+      brand = '',
+      ageGroup = '',
+      sizeGroup = '',
+      page = 1,
+      perPage = 20,
+      sort = 'default'
     } = req.query;
 
-    // 2) Строим WHERE-условие на основе ненулевых фильтров
-    const filters = [];
-    const params  = [];
+    // 1. Обработка категорий с подкатегориями
+    let categoryFilter = '';
+    const params = [];
+    
+    if (category) {
+      categoryFilter = `
+        WITH RECURSIVE subcategories AS (
+          SELECT id FROM categories WHERE id = ?
+          UNION ALL
+          SELECT c.id FROM categories c
+          INNER JOIN subcategories s ON c.parent_id = s.id
+        )
+      `;
+      params.push(category);
+    }
 
-    if (category)  { filters.push('category_id = ?');   params.push(category); }
-    if (brand)     { filters.push('brand = ?');         params.push(brand); }
-    if (ageGroup)  { filters.push('age_group = ?');     params.push(ageGroup); }
-    if (sizeGroup) { filters.push('size_group = ?');    params.push(sizeGroup); }
+    // 2. Базовый запрос с фильтрами
+    const whereConditions = [];
+    
+    if (category) {
+      whereConditions.push('p.category_id IN (SELECT id FROM subcategories)');
+    }
+    if (brand) {
+      whereConditions.push('p.brand = ?');
+      params.push(brand);
+    }
+    if (ageGroup) {
+      whereConditions.push('p.age_group = ?');
+      params.push(ageGroup);
+    }
+    if (sizeGroup) {
+      whereConditions.push('p.size_group = ?');
+      params.push(sizeGroup);
+    }
 
-    const whereClause = filters.length
-      ? `WHERE ${filters.join(' AND ')}`
+    const whereClause = whereConditions.length > 0 
+      ? `WHERE ${whereConditions.join(' AND ')}` 
       : '';
 
-    // 3) Считаем общее число товаров для пагинации
+    // 3. Сортировка
+    let orderClause = 'ORDER BY ';
+    switch(sort) {
+      case 'price_asc':
+        orderClause += 'min_price ASC';
+        break;
+      case 'price_desc':
+        orderClause += 'min_price DESC'; // Сортируем по минимальной цене для всех вариантов
+        break;
+      default:
+        orderClause += 'p.id';
+    }
+
+    // 4. Основной запрос
+    const baseQuery = `
+      ${categoryFilter}
+      SELECT 
+        p.id,
+        p.title,
+        p.brand,
+        p.age_group,
+        p.size_group,
+        p.description,
+        p.sku,
+        CAST(p.rating AS DECIMAL(3,2)) AS rating,
+        p.category_id,
+        p.image_url,
+        MIN(pv.price) AS min_price,
+        MAX(pv.price) AS max_price
+      FROM products p
+      LEFT JOIN product_variants pv ON p.id = pv.product_id
+      ${whereClause}
+      GROUP BY p.id
+      ${orderClause}
+    `;
+
+    // 5. Пагинация и выполнение
     const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total FROM products ${whereClause}`,
+      `SELECT COUNT(*) AS total FROM (${baseQuery}) AS filtered`,
       params
     );
-    const totalPages = Math.ceil(total / perPage);
 
-    // 4) Выбираем нужную «страницу» товаров с учётом фильтров
-    const offset = (Number(page) - 1) * Number(perPage);
-    const [rows] = await db.query(
-      `
-      SELECT
-        id,
-        title,
-        brand,
-        age_group,
-        size_group,
-        description,
-        sku,
-        CAST(rating AS DECIMAL(3,2)) AS rating,
-        category_id,
-        image_url
-      FROM products
-      ${whereClause}
+    const paginatedQuery = `
+      ${baseQuery}
       LIMIT ? OFFSET ?
-      `,
-      [...params, Number(perPage), offset]
-    );
+    `;
+    
+    const offset = (Number(page) - 1) * Number(perPage);
+    const [rows] = await db.query(paginatedQuery, [
+      ...params,
+      Number(perPage),
+      offset
+    ]);
 
-    // 5) Подтягиваем варианты (variants) одним запросом
+    // 6. Загрузка вариантов
     const productIds = rows.map(r => r.id);
     let variantsRows = [];
+    
     if (productIds.length > 0) {
-      [variantsRows] = await db.query(
-        `
+      [variantsRows] = await db.query(`
         SELECT
           product_id,
           id AS variant_id,
           CAST(weight AS DECIMAL(8,2)) AS weight,
-          CAST(price  AS DECIMAL(10,2)) AS price
+          CAST(price AS DECIMAL(10,2)) AS price
         FROM product_variants
         WHERE product_id IN (?)
-        `,
-        [productIds]
-      );
+      `, [productIds]);
     }
+
     const variantsMap = variantsRows.reduce((acc, v) => {
-      if (!acc[v.product_id]) acc[v.product_id] = [];
+      acc[v.product_id] = acc[v.product_id] || [];
       acc[v.product_id].push(v);
       return acc;
     }, {});
 
-    // 6) Формируем окончательный массив с imageUrl и variants
+    // 7. Формирование ответа
     const productsWithMeta = rows.map(p => ({
-      id:           p.id,
-      title:        p.title,
-      brand:        p.brand,
-      age_group:    p.age_group,
-      size_group:   p.size_group,
-      description:  p.description,
-      sku:          p.sku,
-      rating:       p.rating,
-      category_id:  p.category_id,
-      // сначала берём поле image_url из БД, иначе – шаблон
-      imageUrl:     p.image_url || `/images/korm_${p.id}.jpg`,
-      variants:     variantsMap[p.id] || []
+      id: p.id,
+      title: p.title,
+      brand: p.brand,
+      age_group: p.age_group,
+      size_group: p.size_group,
+      description: p.description,
+      sku: p.sku,
+      rating: p.rating,
+      category_id: p.category_id,
+      imageUrl: p.image_url || `/images/korm_${p.id}.jpg`,
+      variants: variantsMap[p.id] || [],
+      price_range: {
+        min: p.min_price,
+        max: p.max_price
+      }
     }));
 
-    // 7) Отдаём клиенту и массив товаров, и число страниц
     res.json({
-      data:       productsWithMeta,
-      totalPages
+      data: productsWithMeta,
+      totalPages: Math.ceil(total / perPage)
     });
 
   } catch (e) {
@@ -294,97 +451,153 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-
-app.get('/api/products/:id', async (req, res) => {
-  const productId = +req.params.id;
-  const conn = await db.getConnection();
-
+// === API: Фильтры товаров ===
+app.get('/api/product-filters', async (req, res) => {
   try {
-    await conn.beginTransaction();
+    // 1. Получаем уникальные бренды
+    const [brandsResult] = await db.query(`
+      SELECT DISTINCT brand 
+      FROM products 
+      WHERE brand IS NOT NULL AND brand != ''
+      ORDER BY brand ASC
+    `);
 
-    const [[product]] = await conn.query(`
-      SELECT 
-        id, title, brand, age_group,
-        size_group, description, sku,
-        CAST(rating AS DECIMAL(3,2)) AS rating,
-        category_id, image_url
-      FROM products WHERE id = ?
-    `, [productId]);
+    // 2. Получаем уникальные возрастные группы
+    const [ageGroupsResult] = await db.query(`
+      SELECT DISTINCT age_group 
+      FROM products 
+      WHERE age_group IS NOT NULL AND age_group != ''
+      ORDER BY age_group ASC
+    `);
 
-    if (!product) return res.status(404).json({ error: 'Товар не найден' });
+    // 3. Получаем уникальные размерные группы
+    const [sizeGroupsResult] = await db.query(`
+      SELECT DISTINCT size_group 
+      FROM products 
+      WHERE size_group IS NOT NULL AND size_group != ''
+      ORDER BY size_group ASC
+    `);
 
-    const [variants] = await conn.query(`
-      SELECT 
-        id AS variant_id,
-        CAST(weight AS DECIMAL(8,2)) AS weight,
-        CAST(price AS DECIMAL(10,2)) AS price
-      FROM product_variants 
-      WHERE product_id = ?
-    `, [productId]);
-
-    await conn.commit();
-    const productWithImage = {
-      ...product,
-      imageUrl: `/images/korm_${product.id}.jpg`,
-      variants
-    };
-    res.json({ ...product, variants });
+    // 4. Формируем ответ
+    res.json({
+      brands: brandsResult.map(item => item.brand),
+      ageGroups: ageGroupsResult.map(item => item.age_group),
+      sizeGroups: sizeGroupsResult.map(item => item.size_group)
+    });
 
   } catch (e) {
-    await conn.rollback();
+    console.error('Ошибка загрузки фильтров:', e);
+    res.status(500).json({ 
+      error: 'Не удалось загрузить параметры фильтрации' 
+    });
+  }
+});
+
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+        p.*,
+        pv.id AS variant_id,
+        pv.weight,
+        pv.price
+      FROM products p
+      LEFT JOIN product_variants pv ON p.id = pv.product_id
+      WHERE p.id = ?
+    `, [req.params.id]);
+
+    if (rows.length === 0) return res.status(404).json({ error: 'Товар не найден' });
+
+    const product = {
+      id: rows[0].id,
+      title: rows[0].title,
+      brand: rows[0].brand,
+      age_group: rows[0].age_group,
+      size_group: rows[0].size_group,
+      description: rows[0].description,
+      sku: rows[0].sku,
+      rating: rows[0].rating,
+      imageUrl: `/images/korm_${rows[0].id}.jpg`, // Формируем путь к изображению
+      variants: rows.map(row => ({
+        variant_id: row.variant_id,
+        weight: row.weight,
+        price: row.price
+      }))
+    };
+
+    res.json(product);
+  } catch (e) {
     console.error('Ошибка загрузки товара:', e);
     res.status(500).json({ error: 'Ошибка загрузки товара' });
-  } finally {
-    conn.release();
   }
 });
 
 app.post('/api/products', upload.single('image'), async (req, res) => {
   const conn = await db.getConnection();
-  
   try {
     await conn.beginTransaction();
-    
+
+    // Парсим данные из формы
+    const productData = JSON.parse(req.body.data);
     const { 
       title,
-      brand = null,
-      age_group = null,
-      size_group = null,
-      description = null,
-      sku = null,
-      rating = null,
       category_id,
-      variants = '[]'
-    } = req.body;
-
-    // Валидация
-    if (!title || !category_id) {
-      throw new Error('Заполните обязательные поля: title и category_id');
-    }
-
-    // Вставка товара
-    const [productResult] = await conn.execute(`
-      INSERT INTO products (
-        title, brand, age_group, size_group,
-        description, sku, rating, category_id, image_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      title,
+      price,
+      sku,
+      description,
       brand,
       age_group,
       size_group,
-      description,
-      sku,
-      rating ? parseFloat(rating) : null,
+      rating,
+      variants
+    } = productData;
+
+    // Валидация обязательных полей
+    if (!title || !category_id || !price) {
+      throw new Error('Не заполнены обязательные поля');
+    }
+
+    // Создаем запись товара
+    const [productResult] = await conn.execute(`
+      INSERT INTO products (
+        title,
+        category_id,
+        brand,
+        age_group,
+        size_group,
+        description,
+        sku,
+        rating
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      title,
       category_id,
-      req.file ? `/uploads/${req.file.filename}` : null
+      brand || null,
+      age_group || null,
+      size_group || null,
+      description || null,
+      sku || null,
+      rating ? parseFloat(rating) : null
     ]);
 
     const productId = productResult.insertId;
 
-    // Обработка вариантов
-    const parsedVariants = JSON.parse(variants);
-    for (const variant of parsedVariants) {
+    // Обработка изображения
+    if (req.file) {
+      const ext = path.extname(req.file.originalname);
+      const newFilename = `korm_${productId}${ext}`;
+      const targetPath = path.join(PROJECT_ROOT, 'public', 'images', newFilename);
+
+      await fs.promises.rename(req.file.path, targetPath);
+      
+      await conn.execute(
+        'UPDATE products SET image_url = ? WHERE id = ?',
+        [`/images/${newFilename}`, productId]
+      );
+    }
+
+    // Добавляем варианты
+    for (const variant of JSON.parse(variants)) {
       await conn.execute(`
         INSERT INTO product_variants (product_id, weight, price)
         VALUES (?, ?, ?)
@@ -396,10 +609,19 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
     }
 
     await conn.commit();
-    res.status(201).json({ id: productId });
+    res.status(201).json({ 
+      id: productId,
+      imageUrl: `/images/korm_${productId}${ext || '.jpg'}`
+    });
 
   } catch (e) {
     await conn.rollback();
+    
+    // Удаляем загруженный файл при ошибке
+    if (req.file) {
+      await fs.promises.unlink(req.file.path).catch(console.error);
+    }
+
     console.error('Ошибка создания товара:', e);
     res.status(500).json({ error: e.message || 'Ошибка создания товара' });
   } finally {
@@ -544,8 +766,7 @@ app.get('/api/reviews/:type', async (req, res) => {
         phone,
         rating,
         comment,
-        created_at,
-        product_id
+        created_at
       FROM ${type === 'pending' ? 'reviews_pending' : 'reviews_approved'}
     `);
     
@@ -564,8 +785,7 @@ app.post('/api/reviews', async (req, res) => {
       email,
       phone = null,
       rating,
-      comment,
-      product_id 
+      comment
     } = req.body;
 
     const [result] = await db.execute(`
@@ -574,10 +794,9 @@ app.post('/api/reviews', async (req, res) => {
         email,
         phone,
         rating,
-        comment,
-        product_id
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `, [author_name, email, phone, rating, comment, product_id]);
+        comment
+      ) VALUES (?, ?, ?, ?, ?)
+    `, [author_name, email, phone, rating, comment]);
 
     res.status(201).json({ id: result.insertId });
     
@@ -594,7 +813,6 @@ app.put('/api/reviews/:id/approve', async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // Переносим отзыв в утвержденные
     await conn.execute(`
       INSERT INTO reviews_approved (
         author_name,
@@ -602,8 +820,7 @@ app.put('/api/reviews/:id/approve', async (req, res) => {
         phone,
         rating,
         comment,
-        created_at,
-        product_id
+        created_at
       )
       SELECT 
         author_name,
@@ -611,13 +828,11 @@ app.put('/api/reviews/:id/approve', async (req, res) => {
         phone,
         rating,
         comment,
-        created_at,
-        product_id
+        created_at
       FROM reviews_pending 
       WHERE id = ?
     `, [reviewId]);
 
-    // Удаляем из ожидающих
     await conn.execute(`
       DELETE FROM reviews_pending 
       WHERE id = ?
@@ -656,53 +871,345 @@ app.delete('/api/reviews/:type/:id', async (req, res) => {
     res.status(500).json({ error: 'Ошибка удаления отзыва' });
   }
 });
+// === API: Капусель ===//
+// Добавляем после других GET-роутов
+app.get('/api/carousel', async (req, res) => {
+  try {
+    const { for_admin } = req.query;
+    let query = `SELECT 
+                  id,
+                  image_path,
+                  title,
+                  description,
+                  sort_order,
+                  is_active,
+                  created_at,
+                  updated_at
+                FROM carousel`;
 
+    // Для главной страницы
+    if (!for_admin) {
+      query += ' WHERE is_active = TRUE ORDER BY sort_order ASC';
+    } 
+    // Для админки
+    else {
+      query += ' ORDER BY created_at DESC';
+    }
+
+    const [slides] = await db.query(query);
+    
+    // Преобразование типов для полей
+    const processed = slides.map(slide => ({
+      ...slide,
+      sort_order: Number(slide.sort_order),
+      is_active: Boolean(slide.is_active),
+      created_at: new Date(slide.created_at).toISOString(),
+      updated_at: new Date(slide.updated_at).toISOString()
+    }));
+
+    res.json(processed);
+
+  } catch (error) {
+    console.error('Ошибка получения карусели:', error);
+    res.status(500).json({ 
+      error: 'Ошибка загрузки данных карусели',
+      details: process.env.NODE_ENV === 'development' ? error.message : null
+    });
+  }
+});
+
+app.post('/api/carousel',
+  carouselUpload.single('image'),
+  async (req, res) => {
+    console.log('1. Начало обработки запроса');
+    console.log('   req.file:', req.file);
+    console.log('   req.body:', req.body);
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Поле image обязательно' });
+    }
+
+    let conn;
+    const tempPath = req.file.path;
+
+    try {
+      // 2. Получаем соединение
+      conn = await db.getConnection();
+      console.log('2. Подключение к БД получено');
+
+      // 3. Начинаем транзакцию
+      await conn.beginTransaction();
+      console.log('3. Транзакция начата');
+
+      // 4. Вставляем базовую запись и сразу получаем ID
+      const title = req.body.title?.trim() || null;
+      const description = req.body.description?.trim() || null;
+      const [insertResult] = await conn.execute(
+        'INSERT INTO carousel (title, description) VALUES (?, ?)',
+        [title, description]
+      );
+      const slideId = insertResult.insertId;
+      console.log('4. Запись создана, ID =', slideId);
+
+      // 5. Генерируем имя и сохраняем через sharp
+// 5. Генерируем имя
+      const newFilename = `slide_${slideId}.${CAROUSEL_CONFIG.FORMAT}`;
+      const targetPath = path.join(CAROUSEL_CONFIG.UPLOAD_DIR, newFilename);
+      console.log('5. Обработка изображения:', tempPath, '→', targetPath);
+
+      let imgBuffer;
+      try {
+        console.log('5.1 sharp: создаём буфер...');
+        imgBuffer = await sharp(tempPath)
+          /*.resize(CAROUSEL_CONFIG.TARGET_WIDTH, CAROUSEL_CONFIG.TARGET_HEIGHT, {
+            fit: 'cover',
+            position: 'center',
+          })*/
+          .toFormat(CAROUSEL_CONFIG.FORMAT, { quality: CAROUSEL_CONFIG.QUALITY })
+          .toBuffer();
+        console.log('5.2 sharp: буфер готов, размер =', imgBuffer.length);
+      } catch (e) {
+        console.error('Ошибка на стадии toBuffer:', e);
+        throw e;
+      }
+
+      try {
+        console.log('5.3 Записываем буфер в файл...');
+        await fs.promises.writeFile(targetPath, imgBuffer);
+        console.log('5.4 Файл сохранён вручную');
+      } catch (e) {
+        console.error('Ошибка при writeFile:', e);
+        throw e;
+      }
+
+      console.log('6. Изображение сохранено на диск');
+
+      // 7. Обновляем запись уже с путём к картинке
+      const imagePath = `/images/carousel/${newFilename}`;
+      const [updateResult] = await conn.execute(
+        'UPDATE carousel SET image_path = ? WHERE id = ?',
+        [imagePath, slideId]
+      );
+      if (updateResult.affectedRows === 0) {
+        throw new Error(`Не могу обновить запись id=${slideId}`);
+      }
+      console.log('7. Запись обновлена, image_path =', imagePath);
+
+      // 8. Фиксируем транзакцию
+      await conn.commit();
+      console.log('8. Транзакция зафиксирована');
+
+      // 9. Удаляем временный файл
+      await fs.promises.unlink(tempPath);
+      console.log('9. Временный файл удалён');
+
+      // 10. Отдаём клиенту свежую запись
+      const [rows] = await db.query(
+        'SELECT * FROM carousel WHERE id = ?',
+        [slideId]
+      );
+      return res.status(201).json(rows[0]);
+
+    } catch (err) {
+      console.error('ОШИБКА в /api/carousel:', err.stack || err.message);
+
+      // Откатим транзакцию, если нужно
+      if (conn) {
+        try {
+          await conn.rollback();
+          console.log('→ Транзакция откатена');
+        } catch (rollbackErr) {
+          console.error('Rollback error:', rollbackErr);
+        }
+      }
+
+      // Удалим временный файл
+      try {
+        if (tempPath) await fs.promises.unlink(tempPath);
+      } catch (unlinkErr) {
+        console.error('Ошибка удаления временного файла:', unlinkErr);
+      }
+
+      return res.status(500).json({ error: err.message });
+    } finally {
+      if (conn) {
+        try {
+          await conn.release();
+          console.log('→ Подключение освобождено');
+        } catch (releaseErr) {
+          console.error('Release error:', releaseErr);
+        }
+      }
+    }
+  }
+);
+
+
+
+
+app.delete('/api/carousel/:id', async (req, res) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Получаем информацию о слайде
+    const [slides] = await conn.query(
+      `SELECT image_path FROM carousel WHERE id = ?`,
+      [req.params.id]
+    );
+
+    if (slides.length === 0) {
+      throw new Error('Слайд не найден');
+    }
+
+    const imagePath = slides[0].image_path;
+
+    // 2. Удаляем запись из БД
+    await conn.execute(
+      `DELETE FROM carousel WHERE id = ?`,
+      [req.params.id]
+    );
+
+    // 3. Удаление файла, если это не дефолтный путь
+    if (imagePath && !imagePath.startsWith('/images/SLIDE')) {
+      const fullPath = path.join(
+        PROJECT_ROOT, 
+        'public',
+        imagePath.startsWith('/') 
+          ? imagePath.slice(1) 
+          : imagePath
+      );
+
+      if (fs.existsSync(fullPath)) {
+        await fs.promises.unlink(fullPath);
+      } else {
+        console.warn(`Файл не найден: ${fullPath}`);
+      }
+    }
+
+    await conn.commit();
+    res.json({ success: true });
+
+  } catch (error) {
+    await conn.rollback();
+    
+    const status = error.message.includes('не найден') ? 404 : 500;
+    console.error('Ошибка удаления слайда:', error);
+
+    res.status(status).json({
+      error: error.message.includes('не найден') 
+        ? error.message 
+        : 'Ошибка при удалении слайда'
+    });
+
+  } finally {
+    conn.release();
+  }
+});
 
 // === API: Заказы ===
-app.get('/api/orders', async (req, res) => {
+
+app.post('/api/orders', async (req, res) => {
+  const conn = await db.getConnection();
   try {
-    const [orders] = await db.query(`
-      SELECT 
-        id,
+    await conn.beginTransaction();
+
+    const { customer, items, delivery_cost, has_discount, total_amount } = req.body;
+
+    // Вставляем основной заказ
+    const [orderResult] = await conn.execute(`
+      INSERT INTO orders (
         status,
         location_id,
         customer_phone,
         customer_fullname,
         customer_email,
         payment_method,
-        CAST(delivery_cost AS DECIMAL(10,2)) AS delivery_cost,
+        delivery_cost,
         has_discount,
-        CAST(total_amount AS DECIMAL(12,2)) AS total_amount,
-        created_at
-      FROM orders
-      ORDER BY created_at DESC
-    `);
-    res.json(orders);
+        total_amount
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      'new', // статус по умолчанию
+      customer.location_id,
+      customer.customer_phone,
+      customer.customer_fullname,
+      customer.customer_email,
+      customer.payment_method,
+      delivery_cost,
+      has_discount,
+      total_amount
+    ]);
+
+    const orderId = orderResult.insertId;
+
+    // Вставляем позиции заказа
+    for (const item of items) {
+      await conn.execute(`
+        INSERT INTO order_items (
+          order_id,
+          product_variant_id,
+          quantity,
+          weight,
+          price
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        orderId,
+        item.product_variant_id,
+        item.quantity,
+        item.weight,
+        item.price
+      ]);
+    }
+
+    await conn.commit();
+    res.status(201).json({ id: orderId });
+
   } catch (e) {
-    console.error('Ошибка загрузки заказов:', e);
-    res.status(500).json({ error: 'Ошибка получения заказов' });
+    await conn.rollback();
+    console.error('Ошибка создания заказа:', e);
+    res.status(500).json({ error: e.message || 'Ошибка создания заказа' });
+  } finally {
+    conn.release();
   }
 });
 
 app.get('/api/orders', async (req, res) => {
   try {
+    // 1. Получаем основные данные заказов
     const [orders] = await db.query(`
       SELECT 
-        o.*,
-        JSON_ARRAYAGG(JSON_OBJECT(
-          'product_variant_id', i.product_variant_id,
-          'quantity', i.quantity,
-          'weight', i.weight,
-          'price', i.price
-        )) AS items
+        o.*
       FROM orders o
-      LEFT JOIN order_items i ON o.id = i.order_id
-      GROUP BY o.id
       ORDER BY o.created_at DESC
     `);
+
+    // 2. Для каждого заказа получаем его позиции
+    const ordersWithItems = await Promise.all(
+      orders.map(async order => {
+        const [items] = await db.query(`
+          SELECT 
+            product_variant_id,
+            quantity,
+            weight,
+            price
+          FROM order_items
+          WHERE order_id = ?
+        `, [order.id]);
+
+        return {
+          ...order,
+          items: items.map(item => ({
+            product_variant_id: item.product_variant_id,
+            quantity: item.quantity,
+            weight: Number(item.weight),
+            price: Number(item.price)
+          }))
+        };
+      })
+    );
     
-    orders.forEach(o => o.items = JSON.parse(o.items || '[]'));
-    res.json(orders);
+    res.json(ordersWithItems);
   } catch (e) {
     console.error('Ошибка загрузки заказов:', e);
     res.status(500).json({ error: 'Ошибка получения заказов' });
@@ -749,17 +1256,36 @@ app.get('/api/quick-orders', async (req, res) => {
   try {
     const [quickOrders] = await db.query(`
       SELECT 
-        id,
-        status,
-        street,
-        house_number,
-        customer_name,
-        CAST(total_amount AS DECIMAL(12,2)) AS total_amount,
-        created_at
-      FROM quick_orders
-      ORDER BY created_at DESC
+        qo.*
+      FROM quick_orders qo
+      ORDER BY qo.created_at DESC
     `);
-    res.json(quickOrders);
+
+    const ordersWithItems = await Promise.all(
+      quickOrders.map(async order => {
+        const [items] = await db.query(`
+          SELECT 
+            product_variant_id,
+            quantity,
+            weight,
+            price
+          FROM quick_order_items
+          WHERE quick_order_id = ?
+        `, [order.id]);
+
+        return {
+          ...order,
+          items: items.map(item => ({
+            product_variant_id: item.product_variant_id,
+            quantity: item.quantity,
+            weight: Number(item.weight),
+            price: Number(item.price)
+          }))
+        };
+      })
+    );
+
+    res.json(ordersWithItems);
   } catch (e) {
     console.error('Ошибка загрузки быстрых заказов:', e);
     res.status(500).json({ error: 'Ошибка получения быстрых заказов' });
@@ -842,6 +1368,17 @@ app.post('/api/quick-orders', async (req, res) => {
 // но без проблем с парсингом паттерна
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API route not found' });
+});
+
+
+// После всех ваших app.use и до app.listen
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  if (err instanceof multer.MulterError) {
+    // например, превышен размер или неверный формат
+    return res.status(400).json({ error: err.message });
+  }
+  res.status(500).json({ error: err.message });
 });
 
 
