@@ -1,50 +1,102 @@
 // Карусель акций на главной странице
+// Карусель акций на главной странице
 class Carousel {
     constructor() {
-      this.carousel = document.querySelector('.carousel');
-      if (!this.carousel) return;
-      this.slides = this.carousel.querySelectorAll('.slide');
-      this.dotsContainer = document.querySelector('.carousel-dots');
-      this.currentIndex = 0;
-      this.interval = null;
-      this.initDots();
-      this.startAutoPlay();
-      this.addEventListeners();
-      this.goToSlide(0);
+        this.carousel = document.querySelector('.carousel');
+        if (!this.carousel) return;
+        
+        this.dotsContainer = document.querySelector('.carousel-dots');
+        this.currentIndex = 0;
+        this.interval = null;
+        this.slides = [];
+        
+        this.initCarousel();
     }
-  
+
+    async initCarousel() {
+        try {
+            // Загрузка данных из API
+            const response = await fetch('/api/carousel');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const slidesData = await response.json();
+            if (!slidesData.length) throw new Error('No slides available');
+            
+            // Очистка статичных слайдов
+            this.carousel.innerHTML = '';
+            
+            // Создание динамических слайдов
+            slidesData.forEach((slide, index) => {
+                const slideElement = document.createElement('div');
+                slideElement.className = `slide${index === 0 ? ' active' : ''}`;
+                slideElement.innerHTML = `
+                    <img src="${slide.image_path}" 
+                        alt="Carousel slide" 
+                        class="carousel-image"
+                        onerror="this.onerror=null;this.src='/images/placeholder.webp'">
+                `;
+                this.carousel.appendChild(slideElement);
+            });
+
+            this.slides = this.carousel.querySelectorAll('.slide');
+            this.initDots();
+            this.startAutoPlay();
+            this.addEventListeners();
+            this.goToSlide(0);
+            
+        } catch (error) {
+            console.error('Carousel initialization error:', error);
+            this.handleFallback();
+        }
+    }
+
+    handleFallback() {
+        // Показ статичных слайдов при ошибке
+        this.slides = this.carousel.querySelectorAll('.slide');
+        if (this.slides.length === 0) {
+            this.carousel.innerHTML = '<div class="carousel-error">Нет доступных слайдов</div>';
+            return;
+        }
+        
+        this.initDots();
+        this.startAutoPlay();
+        this.addEventListeners();
+        this.goToSlide(0);
+    }
+
     initDots() {
-      this.dotsContainer.innerHTML = '';
-      this.slides.forEach((_, i) => {
-        const dot = document.createElement('span');
-        dot.className = `dot${i === 0 ? ' active' : ''}`;
-        dot.addEventListener('click', () => this.goToSlide(i));
-        this.dotsContainer.appendChild(dot);
-      });
-      this.dots = this.dotsContainer.querySelectorAll('.dot');
+        this.dotsContainer.innerHTML = '';
+        this.slides.forEach((_, i) => {
+            const dot = document.createElement('span');
+            dot.className = `dot${i === 0 ? ' active' : ''}`;
+            dot.addEventListener('click', () => this.goToSlide(i));
+            this.dotsContainer.appendChild(dot);
+        });
+        this.dots = this.dotsContainer.querySelectorAll('.dot');
     }
-  
+
     goToSlide(i) {
-      this.currentIndex = i;
-      this.carousel.style.transform = `translateX(-${i * 100}%)`;
-      this.dots.forEach(d => d.classList.remove('active'));
-      this.dots[i].classList.add('active');
+        if (i < 0 || i >= this.slides.length) return;
+        this.currentIndex = i;
+        this.carousel.style.transform = `translateX(-${i * 100}%)`;
+        this.dots.forEach(d => d.classList.remove('active'));
+        this.dots[i].classList.add('active');
     }
-  
+
     nextSlide() {
-      this.goToSlide((this.currentIndex + 1) % this.slides.length);
+        this.goToSlide((this.currentIndex + 1) % this.slides.length);
     }
-  
+
     startAutoPlay() {
-      clearInterval(this.interval);
-      this.interval = setInterval(() => this.nextSlide(), 5000);
+        clearInterval(this.interval);
+        this.interval = setInterval(() => this.nextSlide(), 5000);
     }
-  
+
     addEventListeners() {
-      this.carousel.addEventListener('mouseenter', () => clearInterval(this.interval));
-      this.carousel.addEventListener('mouseleave', () => this.startAutoPlay());
+        this.carousel.addEventListener('mouseenter', () => clearInterval(this.interval));
+        this.carousel.addEventListener('mouseleave', () => this.startAutoPlay());
     }
-  }
+}
   
 
 // Базовый класс для избранного, сравнения и корзины
@@ -60,8 +112,15 @@ class Collection {
         document.addEventListener('click', (e) => {
             if (e.target.closest(`.${this.key} .clear-all`)) this.clearAll();
             if (e.target.closest(`.${this.key} .remove-item`)) {
-                const id = parseInt(e.target.dataset.id);
-                this.removeItem(id);
+                const button = e.target.closest('.remove-item');
+                const criteria = {};
+                if (button.dataset.id) {
+                    criteria.id = parseInt(button.dataset.id);
+                }
+                if (button.dataset.weight) {
+                    criteria.weight = button.dataset.weight;
+                }
+                this.removeItem(criteria);
             }
         });
     }
@@ -77,8 +136,10 @@ class Collection {
         this.saveCollection();
     }
 
-    removeItem(id) {
-        this.items = this.items.filter(item => item.id !== id);
+    removeItem(criteria) {
+        this.items = this.items.filter(item => {
+            return !Object.keys(criteria).every(key => item[key] == criteria[key]);
+        });
         this.saveCollection();
     }
 
@@ -178,7 +239,7 @@ class Cart extends Collection {
                         ${item.quantity} × ${item.price.toFixed(2)} ₽ = <strong>${itemTotal.toFixed(2)} ₽</strong>
                     </div>
                 </div>
-                <button class="remove-item" data-id="${item.id}">🗑</button>
+                <button class="remove-item" data-id="${item.id}" data-weight="${item.weight}">🗑</button>
             </div>`;
     }
 
@@ -377,21 +438,27 @@ function createCategoryColumn(category) {
     const column = document.createElement('div');
     column.className = 'category-col';
     column.innerHTML = `
-        <div class="category-header compact">
-            <img src="/images/categories/${category.id}.webp" alt="${category.name}" 
-                 class="category-icon-small" onerror="this.src='/images/categories/placeholder.webp'">
-            <h3>${category.name}</h3>
-        </div>
-        <div class="subcategories-compact-grid">
-            ${category.subcategories.map(sub => `
-                <a href="/category/${sub.id}" data-subcategory-id="${sub.id}">${sub.name}</a>
-            `).join('')}
-        </div>
+      <div class="category-header compact">
+        <img src="/images/categories/${category.id}.webp" alt="${category.name}" 
+            class="category-icon-small" onerror="this.src='/images/categories/placeholder.webp'">
+        <h3><a href="/catalog.html?category=${category.id}" class="category-link">${category.name}</a></h3>
+      </div>
+      <div class="subcategories-compact-grid">
+        ${category.subcategories.map(sub => `
+          <a href="/catalog.html?category=${sub.id}" data-subcategory-id="${sub.id}">${sub.name}</a>
+        `).join('')}
+      </div>
     `;
     return column;
 }
+  
+  // Добавляем обработчик клика на кнопку "Каталог"
+  document.querySelector('.catalog-btn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.location.href = '/catalog.html';
+  });
 
-function createCombinedColumn(categories) {
+  function createCombinedColumn(categories) {
     const column = document.createElement('div');
     column.className = 'category-col combined';
     column.innerHTML = categories.map(category => `
@@ -399,11 +466,11 @@ function createCombinedColumn(categories) {
             <div class="category-header compact">
                 <img src="/images/categories/${category.id}.webp" alt="${category.name}" 
                      class="category-icon-small" onerror="this.src='/images/categories/placeholder.webp'">
-                <h3>${category.name}</h3>
+                <h3><a href="/catalog.html?category=${category.id}" class="category-link">${category.name}</a></h3>
             </div>
             <div class="subcategories-compact-grid">
                 ${category.subcategories.map(sub => `
-                    <a href="/category/${sub.id}" data-subcategory-id="${sub.id}">${sub.name}</a>
+                    <a href="/catalog.html?category=${sub.id}" data-subcategory-id="${sub.id}">${sub.name}</a>
                 `).join('')}
             </div>
         </div>`).join('');
@@ -546,38 +613,74 @@ class ReviewForm {
 
     validateForm() {
         let valid = true;
+        // Проверка обязательных полей
         this.form.querySelectorAll('[required]').forEach(field => {
             const grp = field.closest('.form-group');
-            if (!field.value.trim()) { grp.classList.add('error'); grp.querySelector('.error-message').textContent = 'Обязательное поле'; valid = false; }
-            else grp.classList.remove('error');
+            if (!field.value.trim()) {
+                grp.classList.add('error');
+                grp.querySelector('.error-message').textContent = 'Обязательное поле';
+                valid = false;
+            } else {
+                grp.classList.remove('error');
+            }
         });
-        if (!this.ratingInput.value) { this.ratingGroup.classList.add('error'); valid = false; }
+
+        // Явная проверка комментария
+        const commentField = this.form.content;
+        const commentValue = commentField.value.trim();
+        const commentGroup = commentField.closest('.form-group');
+        if (!commentValue) {
+            
+            commentGroup.classList.add('error');
+            commentGroup.querySelector('.error-message').textContent = 'Обязательное поле';
+            valid = false;
+        } else {
+            commentGroup.classList.remove('error');
+        }
+
+        // Проверка рейтинга
+        if (!this.ratingInput.value) {
+            this.ratingGroup.classList.add('error');
+            valid = false;
+        } else {
+            this.ratingGroup.classList.remove('error');
+        }
+
         return valid;
     }
 
     async submitForm(e) {
-        e.preventDefault(); if (!this.validateForm()) return;
-        //const productId = this.form.dataset.productId || null;
+        e.preventDefault();
+        if (!this.validateForm()) return;
+        
         const payload = {
             author_name: this.form.name.value.trim(),
             email: this.form.email.value.trim(),
             phone: this.form.phone.value.trim() || null,
             rating: +this.ratingInput.value,
             comment: this.form.content.value.trim(),
-            product_id: 1
+            product_id: 1 // Убедимся, что передаем значение по умолчанию
         };
+
         try {
             const res = await fetch('/api/reviews', {
-                method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
             if (!res.ok) throw new Error(res.statusText);
             const result = await res.json();
             if (result.id) {
-                this.closeModal(); alert('✅ Отзыв успешно отправлен!'); this.form.reset();
+                this.closeModal();
+                alert('✅ Отзыв успешно отправлен!');
+                this.form.reset();
                 this.form.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
+                // Обновляем карусель после отправки
+                new TestimonialCarousel();
             } else throw new Error('Ошибка сервера');
         } catch (err) {
-            console.error(err); alert(`❌ Ошибка отправки: ${err.message}`);
+            console.error(err);
+            alert(`❌ Ошибка отправки: ${err.message}`);
         }
     }
 

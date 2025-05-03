@@ -7,6 +7,7 @@
     <!--<link rel="stylesheet" href="/css/admin.css">-->
 </head>
 <body>
+    <script src="/js/auth.js"></script> <!-- Добавьте эту строку -->
     <script src="/js/admin-auth-check.js"></script>
 
     <header class="admin-header">
@@ -24,6 +25,7 @@
             <button class="admin-tab" data-tab="reviews">Отзывы</button>
             <button class="admin-tab" data-tab="full">Заказы</button>
             <button class="admin-tab" data-tab="quick-orders">Быстрые заказы</button>
+            <button class="admin-tab" data-tab="carousel">Карусель</button>
         </div>
 
         <!-- Секция управления категориями -->
@@ -32,9 +34,18 @@
             <form class="admin-form" id="add-category-form">
                 <h2>Добавить категорию</h2>
                 <div class="form-grid">
-                    <select class="admin-form-select" id="category-parent" name="parent">
+                    <select class="admin-form-select" id="category-parent" name="parent_id">
                         <option value="">Основная категория</option>
                     </select>
+                    <div class="form-group" id="category-image-wrapper">
+                        <label for="category-image">Изображение категории</label>
+                        <input type="file"
+                               id="category-image"
+                               name="image"
+                               accept="image/*"
+                               required>
+                      </div>
+                      
                     <input type="text" class="admin-form-input" 
                            name="name" 
                            placeholder="Название категории" 
@@ -54,46 +65,84 @@
         <section class="admin-section" id="products-section">
             <!-- Форма добавления товара -->
             <!-- В секции products-section -->
-<form class="admin-form" id="add-product-form">
-    <h2>Добавить товар</h2>
-    <div class="form-grid">
-        <select class="admin-form-select" id="product-category" name="category" required>
-            <option value="">Выберите категорию</option>
-        </select>
-        <input type="text" class="admin-form-input" 
-               name="title" 
-               placeholder="Название товара" 
-               required>
-        <input type="number" class="admin-form-input" 
-               name="price" 
-               placeholder="Цена" 
-               step="0.01" 
-               required>
-        <input type="text" class="admin-form-input"
-               name="sku"
-               placeholder="Артикул (SKU)">
-        <textarea class="admin-form-textarea" 
-                  name="description" 
-                  placeholder="Описание товара"></textarea>
-        <div class="form-group">
-            <label>Характеристики (JSON):</label>
-            <textarea class="admin-form-textarea"
-                      name="specifications"
-                      placeholder='{"ключ":"значение", ...}'></textarea>
-        </div>
-        <div class="form-group">
-            <label>Доступные веса (через запятую):</label>
-            <input type="text" class="admin-form-input"
-                   name="weights"
-                   placeholder="0.5, 1, 2">
-        </div>
-        <input type="file" class="admin-form-file" 
-               name="image" 
-               accept="image/*" 
-               required>
-        <button type="submit" class="admin-form-button">Добавить</button>
-    </div>
-</form>
+            <form class="admin-form" id="add-product-form">
+                <h2>Добавить товар</h2>
+                <div class="form-grid">
+                    <!-- Основные поля -->
+                    <select class="admin-form-select" id="product-category" name="category_id" required>
+                        <option value="" disabled selected>Выберите категорию</option>
+                    </select>
+                    
+                    <input type="text" class="admin-form-input" 
+                           name="title" 
+                           placeholder="Название товара*" 
+                           required>
+        
+                    <input type="number" class="admin-form-input" 
+                           name="price" 
+                           placeholder="Базовая цена*" 
+                           step="0.01" 
+                           min="0" 
+                           required>
+        
+                    <input type="text" class="admin-form-input"
+                           name="sku"
+                           placeholder="Артикул (SKU)">
+                    
+                    <!-- Группа дополнительных полей -->
+                    <div class="form-group">
+                        <label>Дополнительные параметры:</label>
+                        <input type="text" class="admin-form-input"
+                               name="brand"
+                               placeholder="Бренд">
+                        
+                        <input type="text" class="admin-form-input"
+                               name="age_group"
+                               placeholder="Возрастная группа">
+                        
+                        <input type="text" class="admin-form-input"
+                               name="size_group"
+                               placeholder="Размерная группа">
+                    </div>
+        
+                    <!-- Характеристики -->
+                    <div class="form-group">
+                        <label>Характеристики (ключ: значение через запятую):</label>
+                        <textarea class="admin-form-textarea"
+                                  name="specifications"
+                                  placeholder="материал: пластик, цвет: синий, вес: 500 г"></textarea>
+                    </div>
+        
+                    <!-- Варианты -->
+                    <div class="form-group">
+                        <label>Доступные варианты (вес в кг через запятую):</label>
+                        <input type="text" class="admin-form-input"
+                               name="weights"
+                               placeholder="0.5, 1, 2"
+                               required>
+                    </div>
+        
+                    <!-- Описание и изображение -->
+                    <div class="form-group">
+                        <label>Описание товара:</label>
+                        <textarea class="admin-form-textarea" 
+                                  name="description" 
+                                  rows="4"
+                                  placeholder="Подробное описание товара..."></textarea>
+                    </div>
+        
+                    <div class="form-group">
+                        <label>Изображение товара*:</label>
+                        <input type="file" class="admin-form-file" 
+                               name="image" 
+                               accept="image/*" 
+                               required>
+                        <p class="form-hint">Формат: JPG/PNG, макс. размер: 5MB</p>
+                    </div>
+        
+                    <button type="submit" class="admin-form-button">Добавить товар</button>
+                </div>
+            </form>
 
             <!-- Таблица товаров -->
             <div class="product-table">
@@ -194,13 +243,86 @@
     <div class="quick-orders-container"></div>
 </section>
 
+<section class="admin-section" id="carousel-section">
+    <!-- Форма добавления слайда -->
+    <form class="admin-form" id="add-carousel-form" enctype="multipart/form-data">
+        <h2>Добавить слайд</h2>
+        
+        <!-- Контейнер для превью (добавляется JS) -->
+        <div class="preview-container"></div>
+
+        <div class="form-grid">
+            <!-- Группа загрузки изображения -->
+            <div class="form-group">
+                <label>Изображение слайда*</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" 
+                           class="admin-form-file"
+                           name="image"
+                           accept="image/jpeg, image/png, image/webp"
+                           required>
+                    <div class="file-metadata"></div>
+                </div>
+                <p class="form-hint">Формат: JPEG/PNG/WEBP, макс. размер: 5MB</p>
+            </div>
+
+            <!-- Текстовые поля -->
+            <div class="form-group">
+                <label>Заголовок (макс. 100 символов)</label>
+                <input type="text" 
+                       class="admin-form-input"
+                       name="title"
+                       maxlength="100"
+                       placeholder="Название слайда">
+            </div>
+            
+            <div class="form-group full-width">
+                <label>Описание</label>
+                <textarea class="admin-form-textarea"
+                          name="description"
+                          rows="3"
+                          maxlength="500"
+                          placeholder="Описание слайда..."></textarea>
+            </div>
+
+            <!-- Кнопка отправки -->
+            <div class="form-group full-width">
+                <button type="submit" class="admin-form-button">
+                    <span class="button-text">Добавить слайд</span>
+                    <span class="loading-spinner"></span>
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Управление существующими слайдами -->
+    <div class="carousel-management">
+        <h2>Управление слайдами</h2>
+        <div class="slides-container">
+            <!-- Состояние загрузки -->
+            <div class="loading-overlay">
+                <div class="loader"></div>
+            </div>
+
+            <!-- Контейнер для слайдов -->
+            <div class="slides-list grid-layout">
+                <!-- Слайды рендерятся динамически -->
+            </div>
+
+            <!-- Пустое состояние -->
+            <div class="empty-state">
+                <img src="/images/icons/review-empty.svg" alt="Нет слайдов" class="empty-icon">
+                <p class="empty-message">Нет добавленных слайдов</p>
+            </div>
+        </div>
+    </div>
+</section>
+
     </main>
-    <script src="/js/auth.js"></script> <!-- Добавьте эту строку -->
-    <script src="/js/admin-auth-check.js"></script>
+    
     <script src="/js/admin.js"></script>
     <script src="/js/main.js"></script>
     <script src="/js/catalog.js"></script>
     <script src="/js/cart.js"></script>
-  <!--<script src="/data/products.js"></script> Здесь должен быть корректный путь -->
 </body>
 </html>

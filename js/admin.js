@@ -1,1391 +1,1105 @@
-console.log('Текущий пользователь:', JSON.parse(localStorage.getItem('currentUser')));
-console.log('Токен:', localStorage.getItem('token'));
-
-const logApiResponse = async (url, options) => {
-    try {
-      const start = Date.now();
-      const res = await fetch(url, options);
-      const time = Date.now() - start;
-      console.log(`API ${url} → ${res.status} (${time}ms)`);
-      return res;
-    } catch (error) {
-      console.error(`API ${url} → ERROR:`, error);
-      throw error;
-    }
-  };
+// admin.js
+const AdminManager = (() => {
+    const utils = {
+      showMessage(message, type = 'error', duration = 5000) {
+        const messageEl = document.createElement('div');
+        messageEl.className = `${type}-message`;
+        messageEl.textContent = message;
+        document.body.prepend(messageEl);
+        setTimeout(() => messageEl.remove(), duration);
+      },
   
-
-const checkUnauthorized = (response) => {
-    if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('currentUser');
-      window.location.href = '/login.html';
-      return true;
-    }
-    return false;
-  };
+      handleLoading(container, show = true) {
+        const loader = container.querySelector('.loading-overlay') || 
+          this.createLoader(container);
+        loader.style.display = show ? 'flex' : 'none';
+      },
   
-  // Используйте в каждом fetch:
-  //fetch(url, options)a
-    //.then(response => {
-      //if (checkUnauthorized(response)) return;
-      // остальная обработка
-    //});
-
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Обновленные эндпоинты API согласно server.js
-    const CONFIG = {
-        ORDERS_DATA_URL:       '/api/orders',
-        QUICK_ORDERS_DATA_URL: '/api/quick-orders',
-        PRODUCTS_DATA_URL:     '/api/products',
-        CATEGORIES_DATA_URL:   '/api/categories',
-        UPLOAD_IMAGE_URL:      '/api/products',       // POST /api/products обрабатывает загрузку изображения через multer
-        PENDING_REVIEWS_URL:   '/api/reviews/pending',
-        APPROVED_REVIEWS_URL:  '/api/reviews/approved',
-        SAVE_REVIEWS_URL:      '/api/reviews'         // POST /api/reviews создаёт новый отзыв
-      };
-      
-
-    let state = {
-        orders: [],
-        quickOrders: [],
-        products: [],
-        categories: [],
-        currentTab: 'categories',
-        flatCategories: [],
-        pendingReviews: [],
-        approvedReviews: []
+      createLoader(container) {
+        const loader = document.createElement('div');
+        loader.className = 'loading-overlay';
+        loader.innerHTML = '<div class="loader"></div>';
+        container.appendChild(loader);
+        return loader;
+      }
     };
-
-    // Переписанная функция сохранения отзыва
-    const saveReview = async (reviewData) => {
+  
+    const API = {
+      async request(method, path, data) {
         try {
-            const response = await logApiResponse(CONFIG.SAVE_REVIEWS_URL, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify({
-                    author_name: reviewData.author || 'Аноним',
-                    email: reviewData.email,
-                    phone: reviewData.phone,
-                    rating: parseInt(reviewData.rating),
-                    comment: reviewData.content,
-                    product_id: reviewData.productId
-                })
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message);
-            }
-
-            return true;
-        } catch (error) {
-            console.error('Ошибка сохранения отзыва:', error);
-            showError(`Ошибка: ${error.message}`);
-            return false;
-        }
-    };
-
-    const DOM = {
-        tabs: document.querySelectorAll('.admin-tab'),
-        categoryForm: document.getElementById('add-category-form'),
-        categoryParentSelect: document.getElementById('category-parent'),
-        categoryList: document.querySelector('.category-list'),
-        productForm: document.getElementById('add-product-form'),
-        productCategorySelect: document.getElementById('product-category'),
-        productTableBody: document.querySelector('.product-table tbody'),
-        searchInput: document.querySelector('.search-box input'),
-        reviewsSection: document.getElementById('reviews-section'),
-        pendingList: document.querySelector('.pending-list'),
-        approvedList: document.querySelector('.approved-list'),
-        reviewCounters: {
-            pending: document.querySelector('.pending-column .counter-number'),
-            approved: document.querySelector('.approved-column .counter-number')
-          } //
-    };
-
-    const checkAdminAccess = () => {
+         // Добавляем проверку авторизации перед каждым запросом
         const user = JSON.parse(localStorage.getItem('currentUser'));
         if (!user || user.role !== 'admin') {
           window.location.href = '/login.html';
-          return false;
+          return;
         }
-        return true;
-      };
+          // базовые опции без заголовков
+          const options = { 
+            method,
+            credentials: 'include' // Важно для сессионных кук
+          };
+    
+          if (data) {
+            if (data instanceof FormData) {
+              options.body = data;
+            } else {
+              options.headers = { 'Content-Type': 'application/json' };
+              options.body = JSON.stringify(data);
+            }
+          }
+    
+          const response = await fetch(`/api${path}`, options);
+          if (response.status === 401) {
+            window.location.href = '/login.html';
+            return;
+          }
+          if (!response.ok) {
+            // прочитаем статус и текст ошибки от сервера
+            const text = await response.text();
+            console.error(`${method} error:`, response.status, text);
 
-    // Обновленная загрузка изображений
-    const uploadImage = async (file) => {
-        const formData = new FormData();
-        formData.append('image', file);
-
-        try {
-            const response = await logApiResponse(CONFIG.UPLOAD_IMAGE_URL, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: formData
-            });
-            
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error);
-            
-            return { path: data.imageUrl };
-            
+            throw new Error(`Ошибка ${response.status}: ${text}`);
+          }
+    
+          // если DELETE вернул 204 No Content, просто выходим без JSON.parse
+          if (response.status === 204) return;
+          return await response.json();
         } catch (error) {
-            console.error('Upload error:', error);
-            showError('Ошибка загрузки изображения');
-            throw error;
+          utils.showMessage(error.message);
+          throw error;
         }
+      },
+    
+      get(path)    { return this.request('GET',    path); },
+      post(path,d) { return this.request('POST',   path, d); },
+      put(path,d)  { return this.request('PUT',    path, d); },
+      patch(path,d) { return this.request('PATCH',  path, d); },
+      delete(path) { return this.request('DELETE', path); }
+    };
+    
+    const Orders = {
+      currentOrderType: 'full',
+      statusColors: {
+        new: '#4a90e2',
+        processing: '#f5a623',
+        shipped: '#7ed321',
+        delivered: '#50e3c2',
+        cancelled: '#d0021b',
+        completed: '#b8e986'
+      },
+
+      async init() {
+        await this.loadOrders('full');
+        await this.loadOrders('quick');
+        this.setupEventHandlers();
+      },
+
+      async loadOrders(type = 'full') {
+        let container; // Объявляем переменную вне блока try
+        try {
+          const endpoint = type === 'full' ? '/orders' : '/quick-orders';
+          container = type === 'full' 
+            ? document.getElementById('full-section') 
+            : document.getElementById('quick-orders-section');
+            
+          utils.handleLoading(container, true);
+          
+          const orders = await API.get(endpoint);
+          this.renderOrders(orders, type);
+
+          
+          if (!this.exportButtonAdded) {
+            this.addExportButton(container, type);
+            this.exportButtonAdded = true;
+          }
+        } catch (error) {
+          console.error(`Ошибка загрузки заказов (${type}):`, error);
+          utils.showMessage(`Не удалось загрузить ${type === 'full' ? 'обычные' : 'быстрые'} заказы`, 'error');
+        } finally {
+          utils.handleLoading(container, false);
+        }
+      },
+
+      renderOrders(orders, type) {
+        const container = type === 'full' 
+          ? document.querySelector('#full-section .orders-container') 
+          : document.querySelector('#quick-orders-section .quick-orders-container');
+          
+        container.innerHTML = `
+          <table class="orders-table">
+            <thead>
+              <tr>
+                ${type === 'full' ? `
+                  <th>ID</th>
+                  <th>Дата</th>
+                  <th>Клиент</th>
+                  <th>Телефон</th>
+                  <th>Сумма</th>
+                  <th>Статус</th>
+                  <th>Действия</th>
+                ` : `
+                  <th>ID</th>
+                  <th>Адрес</th>
+                  <th>Имя</th>
+                  <th>Телефон</th>
+                  <th>Сумма</th>
+                  <th>Статус</th>
+                  <th>Действия</th>
+                `}
+              </tr>
+            </thead>
+            <tbody>
+              ${orders.map(order => `
+                <tr class="order-row" data-id="${order.id}" data-type="${type}">
+                  <td>${order.id}</td>
+                  ${type === 'full' ? `
+                    <td>${this.formatDate(order.created_at)}</td>
+                    <td>${order.customer_fullname}</td>
+                    <td>${order.customer_phone}</td>
+                  ` : `
+                    <td>${order.street}, ${order.house_number}</td>
+                    <td>${order.customer_name}</td>
+                    <td>${order.customer_phone}</td>
+                  `}
+                  <td>${Number(order.total_amount).toFixed(2)} ₽</td>
+                  <td>${this.getStatusBadge(order.status)}</td>
+                  <td>
+                    <button class="details-btn">🔍 Подробности</button>
+                    ${type === 'full' ? '' : `<button class="status-btn">🔄</button>`}
+                  </td>
+                </tr>
+                <tr class="order-details" data-id="${order.id}">
+                  <td colspan="${type === 'full' ? 7 : 6}">
+                    <div class="details-content">
+                      ${this.renderOrderDetails(order, type)}
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      },
+
+      renderOrderDetails(order, type) {
+        if (type === 'full') {
+          return `
+            <div class="details-section">
+              <h4>Информация о заказе #${order.id}</h4>
+              <p>Email: ${order.customer_email}</p>
+              <p>Метод оплаты: ${order.payment_method}</p>
+              <p>Стоимость доставки: ${Number(order.delivery_cost).toFixed(2)} ₽</p>
+              <p>Скидка: ${order.has_discount ? 'Да' : 'Нет'}</p>
+              ${order.items?.length ? `
+                <div class="order-items">
+                  <h5>Позиции:</h5>
+                  <ul>
+                    ${order.items.map(item => `
+                      <li>
+                        Вариант #${item.product_variant_id} - 
+                        ${Number(item.quantity)} × ${Number(item.price).toFixed(2)} ₽
+                        (Вес: ${Number(item.weight).toFixed(2)} кг)
+                      </li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+              <div class="status-controls">
+                <select class="status-select" data-id="${order.id}">
+                  ${Object.keys(this.statusColors)
+                    .filter(s => s !== 'completed')
+                    .map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`)
+                    .join('')}
+                </select>
+                <button class="save-status-btn" data-id="${order.id}">Сохранить</button>
+              </div>
+            </div>
+          `;
+        }
+        
+        // Для быстрых заказов
+        return `
+          <div class="details-section">
+            <h4>Быстрый заказ #${order.id}</h4>
+            <p>Комментарий: ${order.comment || 'нет'}</p>
+            <div class="status-controls">
+              <select class="status-select" data-id="${order.id}">
+                ${['new', 'processing', 'completed', 'cancelled']
+                  .map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`)
+                  .join('')}
+              </select>
+              <button class="save-status-btn" data-id="${order.id}">Сохранить</button>
+            </div>
+          </div>
+        `;
+      },
+
+      getStatusBadge(status) {
+        return `<span class="status-badge" style="background: ${this.statusColors[status]}">
+          ${status}
+        </span>`;
+      },
+
+      formatDate(dateString) {
+        const options = { 
+          day: '2-digit', 
+          month: '2-digit', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        };
+        return new Date(dateString).toLocaleDateString('ru-RU', options);
+      },
+
+      addExportButton(container, type) {
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'export-btn';
+        exportBtn.textContent = 'Экспорт в CSV';
+        exportBtn.onclick = () => this.exportToCSV(type);
+        container.parentNode.insertBefore(exportBtn, container);
+      },
+
+      async exportToCSV(type) {
+        try {
+          const orders = await API.get(type === 'full' ? '/orders' : '/quick-orders');
+          const csvContent = this.convertToCSV(orders, type);
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement('a');
+          
+          link.href = URL.createObjectURL(blob);
+          link.download = `${type}-orders-${new Date().toISOString().slice(0,10)}.csv`;
+          link.click();
+          
+          utils.showMessage('Экспорт завершен', 'success');
+        } catch (error) {
+          console.error('Ошибка экспорта:', error);
+          utils.showMessage('Ошибка при экспорте данных', 'error');
+        }
+      },
+
+      convertToCSV(orders, type) {
+        const headers = type === 'full' 
+          ? ['ID', 'Дата', 'Клиент', 'Телефон', 'Email', 'Сумма', 'Статус']
+          : ['ID', 'Адрес', 'Имя', 'Телефон', 'Сумма', 'Статус'];
+        
+        const rows = orders.map(order => {
+          return type === 'full' 
+            ? [
+                order.id,
+                `"${this.formatDate(order.created_at)}"`,
+                `"${order.customer_fullname}"`,
+                order.customer_phone,
+                order.customer_email,
+                order.total_amount,
+                order.status
+              ]
+            : [
+                order.id,
+                `"${order.street}, ${order.house_number}"`,
+                `"${order.customer_name}"`,
+                order.customer_phone,
+                order.total_amount,
+                order.status
+              ];
+        });
+
+        return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      },
+
+      setupEventHandlers() {
+        // Раскрытие/скрытие деталей заказа
+        document.querySelectorAll('.admin-section').forEach(section => {
+          section.addEventListener('click', (e) => {
+            const row = e.target.closest('.order-row');
+            if (!row) return;
+
+            const details = document.querySelector(`.order-details[data-id="${row.dataset.id}"]`);
+            details.classList.toggle('active');
+          });
+        });
+
+        // Обработка изменения статуса
+        // В секции Orders.setupEventHandlers()
+        document.querySelectorAll('.status-select').forEach(select => {
+          select.addEventListener('change', async (e) => {
+            const orderId = e.target.dataset.id;
+            const newStatus = e.target.value;
+            const type = e.target.closest('.order-details') 
+              ? 'full' 
+              : 'quick';
+
+            try {
+              // Правильный endpoint с /api
+              const endpoint = `/${type === 'full' ? 'orders' : 'quick-orders'}/${orderId}`;
+              await API.patch(endpoint, { status: newStatus });
+              
+              const badge = document.querySelector(`.order-row[data-id="${orderId}"] .status-badge`);
+              badge.textContent = newStatus;
+              badge.style.background = this.statusColors[newStatus];
+              
+              utils.showMessage('Статус обновлен', 'success');
+            } catch (error) {
+              console.error('Ошибка обновления статуса:', error);
+              utils.showMessage('Ошибка обновления статуса', 'error');
+            }
+          });
+        });
+      }
     };
 
-    const loadOrders = async () => {
-        const previousState = {
-            orders: [...state.orders],
-            quickOrders: [...state.quickOrders]
-        };
+    const Categories = {
+      init() {
+        this.loadCategories();
+        this.setupCategoryForm();
+      },
+  
+      async loadCategories() {
+        try {
+          const categories = await API.get('/categories');
+          this.renderCategories(categories);
+          this.updateParentSelect(categories);
+        } catch (error) {
+          console.error('Ошибка загрузки категорий:', error);
+        }
+      },
+  
+      renderCategories(categories) {
+        const container = document.querySelector('.category-list');
+        container.innerHTML = '<h2>Существующие категории</h2>';
+        
+        const tree = this.buildTree(categories);
+        const list = this.createCategoryList(tree);
+        container.appendChild(list);
+      },
+  
+      buildTree(categories, parentId = null) {
+        return categories
+          .filter(cat => cat.parent_id === parentId)
+          .map(cat => ({
+            ...cat,
+            children: this.buildTree(categories, cat.id)
+          }));
+      },
+  
+      createCategoryList(categories, level = 0) {
+        const ul = document.createElement('ul');
+        ul.className = `category-tree level-${level}`;
+  
+        categories.forEach(cat => {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <div class="category-item">
+              <span>${cat.name}</span>
+              <div class="category-actions">
+                <button class="edit-btn" data-id="${cat.id}">✏️</button>
+                <button class="delete-btn" data-id="${cat.id}">🗑️</button>
+              </div>
+            </div>
+          `;
+  
+          if (cat.children.length > 0) {
+            li.appendChild(this.createCategoryList(cat.children, level + 1));
+          }
+  
+          ul.appendChild(li);
+        });
+  
+        return ul;
+      },
+  
+      updateParentSelect(categories) {
+        const select = document.getElementById('category-parent');
+        select.innerHTML = '<option value="">Основная категория</option>';
+        
+        categories.forEach(cat => {
+          const option = document.createElement('option');
+          option.value = cat.id;
+          option.textContent = cat.name;
+          select.appendChild(option);
+        });
+      },
+  
+      setupCategoryForm() {
+        // сразу после Categories.init() или в самом начале setupCategoryForm:
+        const parentSelect = document.getElementById('category-parent');
+        const imgWrapper = document.getElementById('category-image-wrapper');
+
+        parentSelect.addEventListener('change', () => {
+          const isRoot = parentSelect.value === '';
+          imgWrapper.style.display = isRoot ? 'block' : 'none';
+          imgWrapper.querySelector('input').required = isRoot;
+        });
+        // Инициализировать состояние при загрузке
+        parentSelect.dispatchEvent(new Event('change'));
+
+        const form = document.getElementById('add-category-form');
+        form.dataset.action = '/categories';
+        
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const formData = new FormData(form);
+          
+          try {
+            await API.post('/categories', Object.fromEntries(formData));
+            this.loadCategories();
+            form.reset();
+          } catch (error) {
+            console.error('Ошибка создания категории:', error);
+          }
+        });
+      },
+  
+      collectDescendants(categories, parentId) {
+        const directChildren = categories.filter(c => c.parent_id === parentId);
+        let all = [];
+        for (const child of directChildren) {
+          all.push(child.id);
+          all = all.concat(this.collectDescendants(categories, child.id));
+        }
+        return all;
+      },
     
-        async function loadReviews() {
+      setupDeleteHandlers() {
+        document.addEventListener('click', async (e) => {
+          if (!e.target.closest('.delete-btn')) return;
+    
+          const categoryId = +e.target.dataset.id;
+          const categoryName = e.target.closest('.category-item')
+                                   .querySelector('span').textContent;
+    
+          if (!confirm(`Удалить категорию "${categoryName}" и все её подкатегории?`)) {
+            return;
+          }
+    
+          try {
+            // 1. Получаем полный список категорий
+            const categories = await API.get('/categories');
+            // 2. Собираем всех потомков
+            const descendants = this.collectDescendants(categories, categoryId);
+            // 3. Удаляем сначала потомков, затем саму категорию
+            //    Можно делать последовательно, чтобы не было конфликтов FK
+            for (const id of descendants) {
+              await API.delete(`/categories/${id}`);
+            }
+            // и только после этого удаляем родителя
+            await API.delete(`/categories/${categoryId}`);
+    
+            this.loadCategories();
+            utils.showMessage('Категория и все её подкатегории удалены', 'success');
+    
+          } catch (error) {
+            console.error(error);
+            utils.showMessage('Ошибка при каскадном удалении', 'error');
+          }
+        });
+      }
+    };
+
+    const Products = {
+      currentPage: 1,
+      perPage: 20,
+      searchQuery: '',
+  
+      async init() {
+        await this.loadCategories();
+        this.setupProductForm();
+        this.setupSearch();
+        this.loadProducts();
+        this.setupDeleteHandlers();
+      },
+  
+      async loadCategories() {
+        try {
+          const categories = await API.get('/categories');
+          this.renderCategoryOptions(categories);
+        } catch (error) {
+          console.error('Ошибка загрузки категорий:', error);
+        }
+      },
+  
+      renderCategoryOptions(categories) {
+        const select = document.getElementById('product-category');
+        select.innerHTML = '<option value="" disabled selected>Выберите категорию</option>';
+        
+        categories.forEach(cat => {
+          const option = document.createElement('option');
+          option.value = cat.id;
+          option.textContent = cat.name;
+          select.appendChild(option);
+        });
+      },
+  
+      setupProductForm() {
+        const form = document.getElementById('add-product-form');
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const formData = new FormData(form);
+          
+          try {
+            // Преобразование данных формы
+            const specs = this.parseSpecifications(formData.get('specifications'));
+            const variants = this.parseVariants(formData.get('weights'), formData.get('price'));
+            
+            const productData = {
+              title: formData.get('title'),
+              category_id: formData.get('category_id'),
+              price: formData.get('price'),
+              sku: formData.get('sku'),
+              description: formData.get('description'),
+              brand: formData.get('brand'),
+              age_group: formData.get('age_group'),
+              size_group: formData.get('size_group'),
+              specifications: JSON.stringify(specs),
+              variants: JSON.stringify(variants)
+            };
+  
+            // Создаем новый FormData для отправки файла
+            const uploadData = new FormData();
+            uploadData.append('image', formData.get('image'));
+            uploadData.append('data', JSON.stringify(productData));
+  
+            await API.post('/products', uploadData);
+            this.loadProducts();
+            form.reset();
+            utils.showMessage('Товар успешно добавлен', 'success');
+          } catch (error) {
+            console.error('Ошибка создания товара:', error);
+          }
+        });
+      },
+  
+      parseSpecifications(text) {
+        return text.split(',')
+          .map(pair => pair.trim().split(':'))
+          .reduce((acc, [key, value]) => {
+            if (key && value) acc[key.trim()] = value.trim();
+            return acc;
+          }, {});
+      },
+  
+      parseVariants(weights, basePrice) {
+        return weights.split(',')
+          .map(w => parseFloat(w.trim()))
+          .filter(w => !isNaN(w))
+          .map(weight => ({
+            weight,
+            price: parseFloat(basePrice) * weight
+          }));
+      },
+  
+      async loadProducts() {
+        try {
+          const params = {
+            page: this.currentPage,
+            perPage: this.perPage,
+            search: this.searchQuery
+          };
+      
+          // Исправленный запрос с обработкой поиска
+          const response = await API.get(`/products?${new URLSearchParams(params)}`);
+          
+          // Проверка структуры ответа
+          if (!response.data || !response.totalPages) {
+            throw new Error('Неверный формат ответа от сервера');
+          }
+      
+          this.renderProducts(response.data);
+          this.renderPagination(response.totalPages);
+          
+        } catch (error) {
+          console.error('Ошибка загрузки товаров:', error);
+          utils.showMessage('Ошибка загрузки товаров');
+        }
+      },
+  
+      renderProducts(products) {
+        const tbody = document.querySelector('#products-section tbody');
+        tbody.innerHTML = '';
+  
+        products.forEach(product => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${product.id}</td>
+            <td>
+              <img src="${product.imageUrl}" 
+                   alt="${product.title}" 
+                   class="product-thumbnail">
+            </td>
+            <td>${product.title}</td>
+            <td>${product.sku || '-'}</td>
+            <td>${this.getCategoryName(product.category_id)}</td>
+            <td>${product.variants?.[0]?.price ? Number(product.variants[0].price).toFixed(2) : '0.00'} ₽</td>            <td>${this.formatSpecifications(product.specifications)}</td>
+            <td>
+              <button class="edit-btn" data-id="${product.id}">✏️</button>
+              <button class="delete-btn" data-id="${product.id}">🗑️</button>
+            </td>
+          `;
+  
+          tbody.appendChild(row);
+        });
+      },
+  
+      getCategoryName(categoryId) {
+        const select = document.getElementById('product-category');
+        const option = select.querySelector(`option[value="${categoryId}"]`);
+        return option ? option.textContent : 'Неизвестно';
+      },
+  
+      formatSpecifications(specs) {
+        return specs && Object.entries(specs) ? 
+        Object.entries(specs)
+          .map(([key, val]) => `<b>${key}:</b> ${val}`)
+          .join(', ') 
+        : '';
+      },
+  
+      setupSearch() {
+        const searchInput = document.getElementById('search-input');
+        let timeout;
+        
+        searchInput.addEventListener('input', (e) => {
+          clearTimeout(timeout);
+          this.searchQuery = e.target.value;
+          
+          timeout = setTimeout(() => {
+            this.currentPage = 1;
+            this.loadProducts();
+          }, 500);
+        });
+      },
+  
+      renderPagination(totalPages) {
+        const container = document.querySelector('.table-container');
+        let pagination = container.querySelector('.pagination');
+        
+        if (!pagination) {
+          pagination = document.createElement('div');
+          pagination.className = 'pagination';
+          container.appendChild(pagination);
+        }
+  
+        pagination.innerHTML = Array.from({ length: totalPages }, (_, i) => `
+          <button class="page-btn ${i + 1 === this.currentPage ? 'active' : ''}" 
+                  data-page="${i + 1}">
+            ${i + 1}
+          </button>
+        `).join('');
+  
+        pagination.addEventListener('click', (e) => {
+          if (e.target.classList.contains('page-btn')) {
+            this.currentPage = parseInt(e.target.dataset.page);
+            this.loadProducts();
+          }
+        });
+      },
+  
+      setupDeleteHandlers() {
+        document.addEventListener('click', async (e) => {
+          if (!e.target.closest('.delete-btn')) return;
+          
+          const productId = e.target.dataset.id;
+          const productName = e.target.closest('tr').querySelector('td:nth-child(3)').textContent;
+  
+          if (confirm(`Удалить товар "${productName}"?`)) {
             try {
-              const headers = {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-              };
-              const [pendingRes, approvedRes] = await Promise.all([
-                fetch(CONFIG.PENDING_REVIEWS_URL,  { headers }),
-                fetch(CONFIG.APPROVED_REVIEWS_URL, { headers })
-              ]);
-              if (!pendingRes.ok || !approvedRes.ok) {
-                throw new Error('Ошибка загрузки отзывов');
-              }
-              state.pendingReviews  = await pendingRes.json();
-              state.approvedReviews = await approvedRes.json();
-            } catch (err) {
-              console.error('loadReviews error:', err);
-              state.pendingReviews  = [];
-              state.approvedReviews = [];
-              showError(err.message);
+              await API.delete(`/products/${productId}`);
+              this.loadProducts();
+              utils.showMessage('Товар успешно удален', 'success');
+            } catch (error) {
+              console.error('Ошибка удаления товара:', error);
+            }
+          }
+        });
+      }
+    };
+
+    const Reviews = {
+      async init() {
+        await this.loadReviews();
+        this.setupEventHandlers();
+      },
+
+      async loadReviews() {
+        try {
+          utils.handleLoading(document.getElementById('reviews-section'), true);
+          
+          const [pending, approved] = await Promise.all([
+            API.get('/reviews/pending'),
+            API.get('/reviews/approved')
+          ]);
+
+          // В методе loadReviews:
+          this.renderReviews(pending, '.pending-list', true);  // true - флаг для pending
+          this.renderReviews(approved, '.approved-list', false); // false - для approved
+          this.updateCounters(pending.length, approved.length);
+
+        } catch (error) {
+          console.error('Ошибка загрузки отзывов:', error);
+          utils.showMessage('Не удалось загрузить отзывы', 'error');
+        } finally {
+          utils.handleLoading(document.getElementById('reviews-section'), false);
+        }
+      },
+
+      renderReviews(reviews, containerSelector, isPending) { // <- Добавляем параметр isPending
+        const container = document.querySelector(containerSelector);
+        container.innerHTML = '';
+      
+        if (reviews.length === 0) {
+          container.closest('.reviews-list-container')
+            .querySelector('.empty-state').style.display = 'flex';
+          return;
+        }
+      
+        container.closest('.reviews-list-container')
+          .querySelector('.empty-state').style.display = 'none';
+      
+        reviews.forEach(review => {
+          const card = this.createReviewCard(review, isPending); // Передаем флаг
+          container.appendChild(card);
+        });
+      },
+
+      createReviewCard(review, isPending) { // <- Добавляем параметр isPending
+        const card = document.createElement('div');
+        card.className = 'review-card';
+        card.dataset.id = review.id;
+        card.innerHTML = `
+          <div class="review-header">
+            <div class="review-author">${review.author_name}</div>
+            <div class="review-date">${this.formatDate(review.created_at)}</div>
+          </div>
+          <div class="review-rating">${this.createRatingStars(review.rating)}</div>
+          <div class="review-comment">${review.comment}</div>
+          <div class="review-contacts">
+            ${review.email ? `<div>📧 ${review.email}</div>` : ''}
+            ${review.phone ? `<div>📱 ${review.phone}</div>` : ''}
+          </div>
+          <div class="review-actions">
+            ${isPending ? '<button class="approve-btn">✅ Одобрить</button>' : ''}
+            <button class="delete-btn">🗑️ Удалить</button>
+          </div>
+        `;
+        return card;
+      },
+
+      formatDate(dateString) {
+        const options = { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        };
+        return new Date(dateString).toLocaleDateString('ru-RU', options);
+      },
+
+      createRatingStars(rating) {
+        return Array.from({ length: 5 }, (_, i) => 
+          i < rating ? '★' : '☆'
+        ).join('');
+      },
+
+      updateCounters(pendingCount, approvedCount) {
+        document.querySelector('.pending-column .counter-number').textContent = pendingCount;
+        document.querySelector('.approved-column .counter-number').textContent = approvedCount;
+      },
+
+      setupEventHandlers() {
+        document.getElementById('reviews-section').addEventListener('click', async (e) => {
+          const card = e.target.closest('.review-card');
+          if (!card) return;
+
+          const reviewId = card.dataset.id;
+          const isPending = card.closest('.pending-list');
+
+          // Одобрение отзыва
+          if (e.target.closest('.approve-btn')) {
+            try {
+              await API.put(`/reviews/${reviewId}/approve`);
+              card.remove();
+              this.updateCounters(
+                document.querySelector('.pending-list').children.length,
+                document.querySelector('.approved-list').children.length + 1
+              );
+              utils.showMessage('Отзыв одобрен', 'success');
+            } catch (error) {
+              console.error('Ошибка одобрения:', error);
+              utils.showMessage('Не удалось одобрить отзыв', 'error');
             }
           }
 
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-            // Добавляем авторизацию и правильные заголовки
-            const [ordersRes, quickOrdersRes] = await Promise.all([
-                fetch(CONFIG.ORDERS_DATA_URL, { 
-                    signal: controller.signal,
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                }),
-                fetch(CONFIG.QUICK_ORDERS_DATA_URL, { 
-                    signal: controller.signal,
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                })
-            ]);
-    
-            clearTimeout(timeoutId);
-    
-            const processResponse = async (response, type) => {
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.message || `HTTP ${response.status} для ${type}`);
-                }
+          // Удаление отзыва
+          if (e.target.closest('.delete-btn')) {
+            if (!confirm('Удалить этот отзыв?')) return;
             
-                const data = await response.json();
-                
-                return data.map(order => {
-                    // Общие поля для всех заказов
-                    const base = {
-                        id: order.id,
-                        status: order.status,
-                        total: parseFloat(order.total_amount || 0),
-                        created_at: order.created_at
-                    };
-            
-                    // Обработка обычных заказов
-                    if (type === 'обычных заказов') {
-                        return {
-                            ...base,
-                            customer: {
-                                first_name: order.customer_fullname?.split(' ')[0] || 'Не указано',
-                                last_name: order.customer_fullname?.split(' ').slice(1).join(' ') || '',
-                                phone: order.customer_phone || '',
-                                email: order.customer_email || '',
-                                payment_method: order.payment_method || 'Не выбран',
-                                delivery_cost: parseFloat(order.delivery_cost || 0)
-                            },
-                            items: (order.items || []).map(item => ({
-                                id: item.product_variant_id,
-                                name: item.title || `Товар #${item.product_variant_id}`,
-                                price: parseFloat(item.price || 0),
-                                quantity: item.quantity || 1,
-                                weight: parseFloat(item.weight || 0)
-                            }))
-                        };
-                    }
-            
-                    // Обработка быстрых заказов
-                    return {
-                        ...base,
-                        customer: {
-                            name: order.customer_name || 'Не указано',
-                            phone: order.customer_phone || '',
-                            street: order.street || '',
-                            house: order.house_number || '',
-                            comment: order.comment || ''
-                        },
-                        items: (order.items || []).map(item => ({
-                            id: item.product_variant_id,
-                            name: item.title || `Товар #${item.product_variant_id}`,
-                            price: parseFloat(item.price || 0),
-                            quantity: item.quantity || 1,
-                            weight: parseFloat(item.weight || 0)
-                        }))
-                    };
-                });
-            };
-    
-            const [orders, quickOrders] = await Promise.all([
-                processResponse(ordersRes, 'обычных заказов'),
-                processResponse(quickOrdersRes, 'быстрых заказов')
-            ]);
-    
-            // Валидация полученных данных
-            const validateOrder = (order, type) => {
-                const required = {
-                    'обычных заказов': ['first_name', 'last_name', 'email'],
-                    'быстрых заказов': ['name', 'phone', 'street']
-                };
-    
-                return required[type].every(field => 
-                    order.customer[field] && 
-                    typeof order.customer[field] === 'string' &&
-                    order.customer[field].trim().length > 0
-                );
-            };
-    
-            if (!orders.every(o => validateOrder(o, 'обычных заказов'))) {
-                throw new Error('Неверный формат обычных заказов');
-            }
-            
-            // И для быстрых заказов тоже поправим
-            if (!quickOrders.every(o => validateOrder(o, 'быстрых заказов'))) {
-                throw new Error('Неверный формат быстрых заказов');
-            }
-    
-            state.orders = orders;
-            state.quickOrders = quickOrders;
-    
-        } catch (error) {
-            console.error('Ошибка загрузки заказов:', error);
-            state.orders = previousState.orders;
-            state.quickOrders = previousState.quickOrders;
-            showError(error.message);
-            throw error;
-        } finally {
-            renderOrdersSection('full');
-            renderOrdersSection('quick-orders');
-        }
-    };
-
-    // В начало блока с рендером заказов, прямо перед renderOrdersSection:
-    const renderStatusControls = (order, type) => {
-        // Соответствие статусов из таблиц БД
-        const statusOptions = type === 'full' 
-            ? ['new', 'processing', 'shipped', 'delivered', 'cancelled']
-            : ['new', 'processing', 'completed', 'cancelled'];
-    
-        return `
-          <div class="order-controls">
-            <select class="status-select">
-              ${statusOptions.map(status => `
-                <option value="${status}" ${order.status === status ? 'selected' : ''}>
-                  ${getStatusText(status)}
-                </option>
-              `).join('')}
-            </select>
-          </div>
-        `;
-    };
-    
-    const renderOrdersSection = (type) => {
-        const orders = type === 'full' ? state.orders : state.quickOrders;
-        const sectionId = `${type}-section`;
-        const container = document.getElementById(sectionId);
-        if (!container) return;
-      
-        container.innerHTML = `
-          <div class="orders-grid">
-            ${orders.map(order => `
-              <div class="order-card"
-                   data-id="${order.id}"
-                   data-order-type="${type}">
-                <div class="order-meta">
-                    <span class="order-status ${order.status}">
-                        ${getStatusText(order.status)}
-                    </span>
-                    <span class="order-id">#${order.id}</span>
-                    <time class="order-date">
-                        ${new Date(order.created_at).toLocaleDateString()}
-                    </time>
-                    </div>
-                <div class="order-customer">
-                  ${formatCustomerInfo(order, type)}
-                </div>
-                ${renderOrderDetails(order, type)}
-                ${renderStatusControls(order, type)}
-              </div>
-            `).join('')}
-          </div>
-        `;
-      
-        container.querySelectorAll('.status-select').forEach(select => {
-          select.addEventListener('change', handleStatusChange);
-        });
-    };
-    
-    const handleStatusChange = async (e) => {
-        const orderCard = e.target.closest('.order-card');
-        const orderId = parseInt(orderCard.dataset.id);
-        const orderType = orderCard.dataset.orderType;
-        const newStatus = e.target.value;
-        
-        await updateOrderStatus(orderId, newStatus, orderType);
-    };
-    
-    const getStatusText = (status) => {
-        const statusMap = {
-            new: 'Новый',
-            processing: 'В обработке',
-            shipped: 'Отправлен',
-            delivered: 'Доставлен',
-            completed: 'Завершен',
-            cancelled: 'Отменен'
-        };
-        return statusMap[status] || status;
-    };
-    
-    const formatCustomerInfo = (order, type) => {
-        
-        if (type === 'full') {
-            return `
-                ${order.customer.first_name} ${order.customer.last_name}<br>
-                📞 ${order.customer.phone}<br>
-                📧 ${order.customer.email}
-            `;
-        }
-        return `
-            👤 ${order.customer.name}<br>
-            📞 ${order.customer.phone}<br>
-            📍 ${order.customer.street} ${order.customer.house}
-        `;
-    };
-
-    const calculateTotalWeight = items => 
-        items.reduce((sum, item) => sum + (item.weight || 0), 0).toFixed(2);
-    
-    const renderOrderDetails = (order, type) => {
-        const total = parseFloat(order.total).toFixed(2);
-        const itemsHTML = order.items.map(item => `
-            <div class="order-item">
-                <span>${item.name}</span>
-                <span>${item.quantity} × ${parseFloat(item.price).toFixed(2)} ₽</span>
-                ${item.weight ? `<span class="weight">${item.weight} кг</span>` : ''}
-            </div>
-        `).join('');
-    
-        if (type === 'full') {
-            return `
-                <div class="order-details">
-                    <div class="order-items">${itemsHTML}</div>
-                    <div class="order-totals">
-                        <p>Сумма: ${total} ₽</p>
-                        <p>Способ оплаты: ${order.customer.payment_method}</p>
-                        ${order.customer.delivery_cost > 0 ? 
-                            `<p>Доставка: ${parseFloat(order.customer.delivery_cost).toFixed(2)} ₽</p>` : ''}
-                        ${order.has_discount ? '<p class="discount">Скидка применена</p>' : ''}
-                    </div>
-                </div>
-            `;
-        }
-        
-        return `
-            <div class="order-details">
-                <div class="order-items">${itemsHTML}</div>
-                <div class="order-meta">
-                ${order.customer.comment ? 
-                    `<p class="comment">💬 ${order.customer.comment}</p>` : ''}
-                <p class="total">Итого: ${total} ₽</p>
-                ${order.items.some(i => i.weight) ? 
-                    `<p class="weight-info">Общий вес: ${calculateTotalWeight(order.items)} кг</p>` : ''}
-                </div>
-            </div>
-    `;
-};
-    
-    const updateOrderStatus = async (orderId, newStatus, type) => {
-        let targetOrders, orderIndex, select;
-        try {
-            const endpoint = type === 'full' 
-                ? `${CONFIG.ORDERS_DATA_URL}/${orderId}`
-                : `${CONFIG.QUICK_ORDERS_DATA_URL}/${orderId}`;
-    
-            const response = await logApiResponse(endpoint, {
-                method: 'PATCH',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify({ status: newStatus })
-            });
-    
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка сервера');
-            }
-
-            // В updateOrderStatus добавить:
-            if (response.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/login.html';
-                return;
-            }
-    
-            // Обновляем локальное состояние
-            targetOrders = type === 'full' ? state.orders : state.quickOrders;
-        orderIndex = targetOrders.findIndex(o => o.id === orderId);
-        
-        if (orderIndex > -1) {
-            targetOrders[orderIndex].status = newStatus;
-            renderOrdersSection(type);
-        }
-    } catch (error) {
-        console.error('Ошибка обновления статуса:', error);
-        showError(`Ошибка: ${error.message}`);
-        
-        // Проверка существования переменных
-        if (targetOrders && orderIndex !== undefined && orderIndex > -1) {
-            const prevStatus = targetOrders[orderIndex].status;
-            select = document.querySelector(`[data-id="${orderId}"] .status-select`);
-            if (select) select.value = prevStatus;
-        }
-    }
-};
-
-
-
-        const renderReviews = () => {
-            const createReviewCard = (review, isPending) => `
-                <div class="review-card" data-id="${review.id}">
-                    <div class="review-header">
-                        <span class="review-author">${review.author_name}</span>
-                        <div class="review-meta">
-                            <span class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</span>
-                            <time>${new Date(review.created_at).toLocaleDateString()}</time>
-                        </div>
-                    </div>
-                    <p class="review-content">${review.comment}</p>
-                    <div class="review-actions">
-                        ${isPending ? `<button data-action="approve">✅ Одобрить</button>` : ''}
-                        <button data-action="delete">🗑 Удалить</button>
-                    </div>
-                </div>
-            `;
-        
-            DOM.pendingList.innerHTML = state.pendingReviews.map(r => 
-                createReviewCard(r, true)).join('');
-                
-            DOM.approvedList.innerHTML = state.approvedReviews.map(r => 
-                createReviewCard(r, false)).join('');
-            
-            DOM.reviewCounters.pending.textContent = state.pendingReviews.length;
-            DOM.reviewCounters.approved.textContent = state.approvedReviews.length;
-        }
-
-    // Инициализация
-
-    // Загрузка данных
-    const loadInitialData = async () => {
-        try {
-            const headers = {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                'Content-Type': 'application/json'
-            };
-    
-            // Загрузка продуктов
-            const productsRes = await logApiResponse(CONFIG.PRODUCTS_DATA_URL, { headers });
-            if (checkUnauthorized(productsRes)) return;
-            if (!productsRes.ok) throw new Error(`Ошибка загрузки товаров: ${productsRes.status}`);
-            const productsData = (await productsRes.json()).data || [];
-    
-            // Загрузка категорий
-            const categoriesRes = await logApiResponse(CONFIG.CATEGORIES_DATA_URL, { headers });
-            if (checkUnauthorized(categoriesRes)) return;
-            if (!categoriesRes.ok) throw new Error(`Ошибка загрузки категорий: ${categoriesRes.status}`);
-            const categoriesData = await categoriesRes.json();
-    
-            // Обновление состояния
-            state.products = transformProducts(productsData);
-            state.flatCategories = categoriesData;
-            state.categories = buildCategoryTree(categoriesData);
-    
-            console.log('Данные загружены:', { 
-                products: state.products.slice(0, 3), 
-                categories: state.categories.slice(0, 3) 
-            });
-    
-        } catch (error) {
-            console.error('Ошибка загрузки:', error);
-            showError(`Ошибка инициализации: ${error.message}`);
-            throw error;
-        }
-    };
-    
-    const transformProducts = (products) => {
-        return products.map(product => ({
-            id: product.id,
-            title: product.title,
-            categoryId: product.category_id,
-            brand: product.brand || 'Не указан',
-            ageGroup: product.age_group || '',
-            sizeGroup: product.size_group || '',
-            rating: parseFloat(product.rating) || 0,
-            image: product.imageUrl || '/images/placeholder.webp',
-            description: product.description || '',
-            sku: product.sku || `SKU-${product.id}`,
-            variants: (product.variants || []).map(v => ({
-                id: v.variant_id,
-                weight: parseFloat(v.weight),
-                price: parseFloat(v.price),
-                productId: product.id
-            }))
-        }));
-    };
-    
-    const buildCategoryTree = (categories, parentId = null) => {
-        return categories
-            .filter(category => category.parent_id === parentId)
-            .map(category => ({
-                ...category,
-                subcategories: buildCategoryTree(categories, category.id)
-            }));
-    };
-    
-    const flattenCategories = (categories, level = 0, parentId = null) => {
-        return categories.reduce((acc, category) => {
-            acc.push({
-                id: category.id,
-                name: category.name,
-                parent_id: parentId,
-                level
-            });
-            
-            if (category.subcategories && category.subcategories.length > 0) {
-                acc = acc.concat(flattenCategories(
-                    category.subcategories,
-                    level + 1,
-                    category.id
-                ));
-            }
-            return acc;
-        }, []);
-    };
-    
-    const updateCategorySelects = () => {
-        const options = state.flatCategories.map(category => 
-            `<option value="${category.id}">${'&nbsp;&nbsp;'.repeat(category.level)}${category.name}</option>`
-        ).join('');
-        
-        DOM.categoryParentSelect.innerHTML = 
-            `<option value="">Основная категория</option>${options}`;
-        DOM.productCategorySelect.innerHTML = options;
-    };
-    
-    const handleCategorySubmit = async (e) => {
-        e.preventDefault();
-        if (!checkAdminAccess()) {
-            alert('Доступ запрещен!');
-            window.location.href = '/login.html';
-            return;
-        }
-    
-        const formData = new FormData(e.target);
-        const categoryData = {
-            name: formData.get('name').trim(),
-            parent_id: formData.get('parent') || null
-        };
-    
-        try {
-            const response = await logApiResponse(CONFIG.CATEGORIES_DATA_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: JSON.stringify(categoryData)
-            });
-    
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message);
-            }
-    
-            // Получаем актуальный список категорий после создания
-            const categoriesResponse = await logApiResponse(CONFIG.CATEGORIES_DATA_URL);
-            if (!categoriesResponse.ok) throw new Error('Ошибка загрузки категорий');
-            const updatedCategories = await categoriesResponse.json();
-            
-            // Обновляем состояние
-            state.flatCategories = updatedCategories;
-            state.categories = buildCategoryTree(updatedCategories);
-            
-            updateCategorySelects();
-            renderCategories();
-            e.target.reset();
-            showSuccessMessage('Категория успешно добавлена!');
-    
-        } catch (error) {
-            console.error('Ошибка:', error);
-            showError(error.message);
-        }
-    };
-                 // Рендер категорий
-                 const renderCategories = () => {
-                    const renderCategory = (category, level = 0) => `
-                        <div class="category-item" data-id="${category.id}">
-                            <div class="category-header" style="padding-left: ${level * 30}px">
-                                <span class="category-name">${category.name}</span>
-                                <button class="delete-button">Удалить</button>
-                            </div>
-                            ${category.subcategories?.map(sub => 
-                                renderCategory(sub, level + 1)
-                            ).join('') || ''}
-                        </div>
-                    `;
-                    DOM.categoryList.innerHTML = state.categories.map(category => 
-                        renderCategory(category)
-                    ).join('');
-                };
-                
-                const handleDelete = async (e) => {
-                    if (!checkAdminAccess()) {
-                        alert('Доступ запрещен!');
-                        window.location.reload();
-                        return;
-                    }
-                    
-                    if (!e.target.classList.contains('delete-button')) return;
-                
-                    // Удаление категории
-                    const categoryItem = e.target.closest('.category-item');
-                    if (categoryItem) {
-                        const categoryId = parseInt(categoryItem.dataset.id);
-                        if (!confirm('Удалить категорию и все подкатегории?')) return;
-                        
-                        try {
-                            // Получаем все ID для удаления
-                            const idsToRemove = getCategoryChildrenIds(categoryId);
-                            
-                            // Удаляем категории через API
-                            await Promise.all(idsToRemove.map(id => 
-                                fetch(`${CONFIG.CATEGORIES_DATA_URL}/${id}`, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                                    }
-                                }).then(res => {
-                                    if (!res.ok) throw new Error('Ошибка удаления категории');
-                                })
-                            ));
-                
-                            // Обновляем данные после удаления
-                            const [categoriesRes, productsRes] = await Promise.all([
-                                fetch(CONFIG.CATEGORIES_DATA_URL),
-                                fetch(CONFIG.PRODUCTS_DATA_URL)
-                            ]);
-                            
-                            const [updatedCategories, updatedProducts] = await Promise.all([
-                                categoriesRes.json(),
-                                productsRes.json()
-                            ]);
-                
-                            // Обновляем состояние
-                            state.flatCategories = updatedCategories;
-                            state.categories = buildCategoryTree(updatedCategories);
-                            state.products = transformProducts(updatedProducts);
-                
-                            renderAll();
-                            updateCategorySelects();
-                            
-                        } catch (error) {
-                            console.error('Ошибка:', error);
-                            showError(error.message);
-                        }
-                        return;
-                    }
-                
-                    // Удаление товара
-                    const productRow = e.target.closest('.product-item');
-                    if (productRow) {
-                        const productId = parseInt(productRow.dataset.id);
-                        if (!confirm('Удалить товар?')) return;
-                        
-                        try {
-                            const response = await logApiResponse(`${CONFIG.PRODUCTS_DATA_URL}/${productId}`, {
-                                method: 'DELETE',
-                                headers: {
-                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                                }
-                            });
-                
-                            if (!response.ok) {
-                                const error = await response.json();
-                                throw new Error(error.message);
-                            }
-                
-                            // Обновляем список товаров
-                            const productsRes = await logApiResponse(CONFIG.PRODUCTS_DATA_URL);
-                            const updatedProducts = await productsRes.json();
-                            state.products = transformProducts(updatedProducts);
-                            
-                            renderProducts();
-                            
-                        } catch (error) {
-                            console.error('Ошибка:', error);
-                            showError(error.message);
-                        }
-                    }
-                };
-
-    // Получение ID всех потомков
-const getCategoryChildrenIds = (parentId) => {
-    const children = state.flatCategories.filter(c => c.parent_id === parentId);
-    return children.reduce((acc, child) => {
-        acc.push(child.id);
-        acc.push(...getCategoryChildrenIds(child.id));
-        return acc;
-    }, [parentId]);
-};
-
-const showError = (message) => {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-message';
-    errorDiv.textContent = message;
-    document.body.appendChild(errorDiv);
-    setTimeout(() => errorDiv.remove(), 3000);
-};
-
-const showSuccessMessage = (message) => {
-    const successDiv = document.createElement('div');
-    successDiv.className = 'success-message';
-    successDiv.textContent = message;
-    document.body.appendChild(successDiv);
-    setTimeout(() => successDiv.remove(), 3000);
-};
-
-// Добавление товара
-const handleProductSubmit = async (e) => {
-    e.preventDefault();
-    if (!checkAdminAccess()) {
-        alert('Доступ запрещен! Недостаточно прав для выполнения операции');
-        window.location.href = '/index.html';
-        return;
-    }
-    
-    const form = e.target;
-    const formData = new FormData(form);
-    
-    try {
-        // Валидация основных полей
-        const requiredFields = {
-            title: formData.get('title').trim(),
-            category_id: formData.get('category'),
-            image: formData.get('image')
-        };
-
-        // Проверка обязательных полей
-        if (!requiredFields.title) {
-            alert('Введите название товара');
-            form.title.focus();
-            return;
-        }
-        if (!requiredFields.category_id || isNaN(requiredFields.category_id)) {
-            alert('Выберите категорию');
-            form.category.focus();
-            return;
-        }
-        if (!requiredFields.image?.name) {
-            alert('Загрузите изображение товара');
-            form.image.focus();
-            return;
-        }
-
-        // Проверка существования категории
-        const categoryExists = state.flatCategories.some(
-            c => c.id === parseInt(requiredFields.category_id)
-        );
-        if (!categoryExists) {
-            alert('Выбранная категория не существует');
-            return;
-        }
-
-        // Сбор данных для API
-        const productData = new FormData();
-        productData.append('title', requiredFields.title);
-        productData.append('category_id', requiredFields.category_id);
-        productData.append('image', requiredFields.image);
-        
-        // Опциональные поля
-        const optionalFields = [
-            'brand', 'age_group', 'size_group', 
-            'description', 'sku', 'rating'
-        ];
-        
-        optionalFields.forEach(field => {
-            const value = formData.get(field);
-            if (value) productData.append(field, value);
-        });
-
-        // Варианты товара
-        const variants = formData.get('variants');
-        if (variants) {
             try {
-                JSON.parse(variants);
-                productData.append('variants', variants);
+              const type = isPending ? 'pending' : 'approved';
+              await API.delete(`/reviews/${type}/${reviewId}`);
+              card.remove();
+              this.updateCounters(
+                isPending ? 
+                  document.querySelector('.pending-list').children.length - 1 :
+                  document.querySelector('.pending-list').children.length,
+                isPending ? 
+                  document.querySelector('.approved-list').children.length :
+                  document.querySelector('.approved-list').children.length - 1
+              );
+              utils.showMessage('Отзыв удален', 'success');
             } catch (error) {
-                alert('Ошибка в формате вариантов! Используйте JSON');
-                form.variants.focus();
-                return;
+              console.error('Ошибка удаления:', error);
+              utils.showMessage('Не удалось удалить отзыв', 'error');
             }
-        }
-
-        // Отправка данных
-        const response = await logApiResponse(CONFIG.PRODUCTS_DATA_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: productData
+          }
         });
+      }
+    };
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Ошибка сервера');
-        }
-
-        // Обновление списка товаров
-        const productsRes = await logApiResponse(CONFIG.PRODUCTS_DATA_URL);
-        const updatedProducts = await productsRes.json();
-        state.products = transformProducts(updatedProducts);
-        
-        form.reset();
-        showSuccessMessage('Товар успешно добавлен!');
-        renderProducts();
-
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showError(error.message);
-    }
-
-                // Обработка вариантов товара
-const variantsInput = formData.get('variants');
-let variants = [];
-try {
-    if (variantsInput) {
-        variants = JSON.parse(variantsInput);
-        if (!Array.isArray(variants)) {
-            throw new Error('Варианты должны быть массивом');
-        }
-    }
-} catch (error) {
-    alert('Ошибка в формате вариантов! Используйте JSON-массив объектов с weight и price');
-    form.variants.focus();
-    return;
-}
-
-// Проверка наличия вариантов
-if (variants.length === 0) {
-    // Создаем вариант по умолчанию если нет ввода
-    variants.push({ weight: 1, price: parseFloat(formData.get('price')) });
-}
-
-// Создание объекта товара для API
-const productData = {
-    title: formData.get('title').trim(),
-    category_id: parseInt(formData.get('category')),
-    description: formData.get('description').trim() || null,
-    sku: formData.get('sku').trim() || null,
-    brand: formData.get('brand').trim() || null,
-    age_group: formData.get('age_group').trim() || null,
-    size_group: formData.get('size_group').trim() || null,
-    rating: formData.get('rating') ? parseFloat(formData.get('rating')) : null,
-    variants: variants.map(v => ({
-        weight: parseFloat(v.weight),
-        price: parseFloat(v.price)
-    }))
-};
-
-try {
-    // Отправка данных через FormData для поддержки файлов
-    const formPayload = new FormData();
-  formPayload.append('data', JSON.stringify(productData));
+    const Carousel = {
+      async init() {
+        this.section = document.getElementById('carousel-section');
+        this.slidesList = this.section.querySelector('.slides-list');
+        this.emptyState = this.section.querySelector('.empty-state');
+        this.loader = this.section.querySelector('.loading-overlay');
+        this.setupFormHandlers();
+        this.setupDeleteHandlers();
     
-    const imageFile = formData.get('image');
-    if (imageFile) {
-        formPayload.append('image', imageFile);
-    }
+        await this.loadSlides();
+      },
+    
+      async loadSlides() {
+        try {
+          utils.handleLoading(this.section, true);
+          
+          const slides = await API.get('/carousel?for_admin=1');
+          this.renderSlides(slides);
+          
+          this.emptyState.style.display = slides.length ? 'none' : 'flex';
+          
+        } catch (error) {
+          console.error('Ошибка загрузки слайдов:', error);
+          utils.showMessage('Не удалось загрузить слайды', 'error');
+        } finally {
+          utils.handleLoading(this.section, false);
+        }
+      },
+    
+      renderSlides(slides) {
+        this.slidesList.innerHTML = slides.map(slide => `
+          <div class="slide-card" data-id="${slide.id}">
+            <div class="slide-preview">
+              <img src="${slide.image_path}" 
+                   alt="${slide.title || 'Слайд карусели'}" 
+                   onerror="this.src='/images/placeholder.png'">
+              <div class="slide-meta">
+                ${slide.title ? `<h3>${slide.title}</h3>` : ''}
+                ${slide.description ? `<p>${slide.description}</p>` : ''}
+                <div class="slide-info">
+                  <span>${new Date(slide.created_at).toLocaleDateString()}</span>
+                  <span>Порядок: ${slide.sort_order}</span>
+                  <span>${slide.is_active ? 'Активен' : 'Скрыт'}</span>
+                </div>
+              </div>
+            </div>
+            <div class="slide-actions">
+              <button class="delete-btn" data-id="${slide.id}">Удалить</button>
+            </div>
+          </div>
+        `).join('');
+      },
 
-    const response = await logApiResponse(CONFIG.PRODUCTS_DATA_URL, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formPayload
+        // Новый метод для настройки формы
+  setupFormHandlers() {
+    const form = document.getElementById('add-carousel-form');
+    const previewContainer = this.createPreviewContainer();
+
+    form.insertBefore(previewContainer, form.querySelector('.form-grid'));
+    
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await this.handleFormSubmit(form, previewContainer);
     });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        // Обработка ошибок дубликатов из сервера
-        if (errorData.error.includes('sku')) {
-            throw new Error('Товар с таким артикулом уже существует');
-        }
-        throw new Error(errorData.error || 'Ошибка сохранения товара');
+    form.querySelector('input[type="file"]').addEventListener('change', (e) => {
+      this.handleImagePreview(e.target, previewContainer);
+    });
+  },
+
+  // Создаем контейнер для превью
+  createPreviewContainer() {
+    const container = document.createElement('div');
+    container.className = 'preview-container';
+    container.innerHTML = `
+      <div class="image-preview" style="display:none;">
+        <img class="preview-image">
+        <button type="button" class="clear-preview">&times;</button>
+      </div>
+      <div class="upload-error" style="display:none;"></div>
+    `;
+    
+    container.querySelector('.clear-preview').addEventListener('click', () => {
+      this.clearPreview(container);
+    });
+    
+    return container;
+  },
+
+  // Обработка превью изображения
+  handleImagePreview(input, container) {
+    const file = input.files[0];
+    const errorEl = container.querySelector('.upload-error');
+    const previewEl = container.querySelector('.image-preview');
+    
+    errorEl.style.display = 'none';
+    
+    // Валидация файла
+    if (!file) return;
+    
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      errorEl.textContent = 'Недопустимый формат файла';
+      errorEl.style.display = 'block';
+      input.value = '';
+      return;
     }
 
-    // Успешное создание - обновляем данные
-    const [productsRes, categoriesRes] = await Promise.all([
-        fetch(CONFIG.PRODUCTS_DATA_URL),
-        fetch(CONFIG.CATEGORIES_DATA_URL)
-    ]);
-    
-    const [productsData, categoriesData] = await Promise.all([
-        productsRes.json(),
-        categoriesRes.json()
-    ]);
-
-    // Обновление глобального состояния
-    state.products = transformProducts(productsData);
-    state.flatCategories = categoriesData;
-    state.categories = buildCategoryTree(categoriesData);
-
-    // Обновление интерфейса
-    renderProducts();
-    updateCategorySelects();
-    
-    // Сброс формы и уведомление
-    form.reset();
-    showSuccessMessage('Товар успешно добавлен!');
-
-} catch (error) {
-    console.error('Ошибка при добавлении товара:', error);
-    showError(error.message);
-    
-    // Восстановление данных с сервера при ошибке
-    try {
-        const [productsRes, categoriesRes] = await Promise.all([
-            fetch(CONFIG.PRODUCTS_DATA_URL),
-            fetch(CONFIG.CATEGORIES_DATA_URL)
-        ]);
-        
-        state.products = transformProducts(await productsRes.json());
-        state.flatCategories = await categoriesRes.json();
-        state.categories = buildCategoryTree(state.flatCategories);
-        
-        renderProducts();
-    } catch (reloadError) {
-        console.error('Ошибка восстановления данных:', reloadError);
-        showError('Ошибка синхронизации данных. Обновите страницу');
+    if (file.size > 5 * 1024 * 1024) {
+      errorEl.textContent = 'Файл слишком большой (макс. 5MB)';
+      errorEl.style.display = 'block';
+      input.value = '';
+      return;
     }
-}
-///////////////////////////////////////////////
-    // Поиск товаров
-    const handleSearch = async (e) => {
-        const term = e.target.value.toLowerCase();
-        try {
-          const response = await logApiResponse(
-            `${CONFIG.PRODUCTS_DATA_URL}?search=${encodeURIComponent(term)}`,
-            { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } }
-          );
-          if (!response.ok) throw new Error('Ошибка поиска');
-      
-          const searchJson = await response.json();
-          const filteredProducts = Array.isArray(searchJson) ? searchJson : searchJson.data;
-          renderProducts(filteredProducts);
-        } catch (error) {
-          console.error('Ошибка поиска:', error);
-          showError('Ошибка при выполнении поиска');
-        }
-      };
-      
-    
-      const renderProducts = (products = state.products) => {
-        try {
-            const categoryMap = state.flatCategories.reduce((acc, c) => {
-                acc[c.id] = c.name;
-                return acc;
-            }, {});
-    
-            DOM.productTableBody.innerHTML = products.map(product => {
-                const firstVariant = product.variants?.[0] || {};
-                return `
-                    <tr class="product-item" data-id="${product.id}">
-                        <td>${product.id}</td>
-                        <td>${product.title || 'Без названия'}</td>
-                        <td>${categoryMap[product.categoryId] || 'Без категории'}</td>
-                        <td>${firstVariant.price ? parseFloat(firstVariant.price).toFixed(2) : '0.00'} ₽</td>
-                        <td>
-                            <button class="edit-product-btn" data-id="${product.id}">
-                                Редактировать
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('') || '<tr><td colspan="5">Нет товаров</td></tr>';
-    
-            console.log('Отрендерено товаров:', products.length);
-            
-        } catch (error) {
-            console.error('Ошибка рендера товаров:', error);
-            DOM.productTableBody.innerHTML = '<tr><td colspan="5">Ошибка загрузки</td></tr>';
-        }
+
+    // Показ превью
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      previewEl.style.display = 'block';
+      previewEl.querySelector('img').src = e.target.result;
     };
-    
-    // Вспомогательная функция для экранирования HTML
-    const escapeHTML = (str) => {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    };
-      
-    
-      const handleReviewAction = async (action, reviewId) => {
-        if (!checkAdminAccess()) {
-            showError('Доступ запрещен!');
-            return;
-        }
-    
-        try {
-            // Определяем текущий статус отзыва
-            const isPending = state.pendingReviews.some(r => r.id === reviewId);
-            const reviewType = isPending ? 'pending' : 'approved';
-    
-            // Подтверждение для деструктивных действий
-            if (action === 'delete' && !confirm('Удалить отзыв безвозвратно?')) return;
-    
-            // Формируем запросы в зависимости от действия
-            let response;
-            switch(action) {
-                case 'approve':
-                    if (!isPending) throw new Error('Можно одобрять только отзывы из ожидания');
-                    response = await logApiResponse(`${CONFIG.SAVE_REVIEWS_URL}/${reviewId}/approve`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
-                    });
-                    break;
-    
-                case 'delete':
-                    response = await logApiResponse(`${CONFIG.SAVE_REVIEWS_URL}/${reviewType}/${reviewId}`, {
-                        method: 'DELETE',
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
-                    });
-                    break;
-    
-                default:
-                    throw new Error('Неизвестное действие');
-            }
-    
-            // Проверка ответа сервера
-            if (checkUnauthorized(response)) return;
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка операции');
-            }
-    
-            // Локальное обновление состояния без перезагрузки
-            if (action === 'approve') {
-                const approvedReview = state.pendingReviews.find(r => r.id === reviewId);
-                state.pendingReviews = state.pendingReviews.filter(r => r.id !== reviewId);
-                state.approvedReviews.push(approvedReview);
-            } else {
-                if (isPending) {
-                    state.pendingReviews = state.pendingReviews.filter(r => r.id !== reviewId);
-                } else {
-                    state.approvedReviews = state.approvedReviews.filter(r => r.id !== reviewId);
-                }
-            }
-    
-            // Обновление счетчиков и отображения
-            DOM.reviewCounters.pending.textContent = state.pendingReviews.length;
-            DOM.reviewCounters.approved.textContent = state.approvedReviews.length;
-            renderReviews();
-    
-        } catch (error) {
-            console.error('Ошибка модерации:', error);
-            showError(`Ошибка: ${error.message}`);
-            
-            // Восстановление через перезагрузку данных
-            try {
-                const [pendingRes, approvedRes] = await Promise.all([
-                    fetch(CONFIG.PENDING_REVIEWS_URL),
-                    fetch(CONFIG.APPROVED_REVIEWS_URL)
-                ]);
-                
-                state.pendingReviews = await pendingRes.json();
-                state.approvedReviews = await approvedRes.json();
-                renderReviews();
-                
-            } catch (reloadError) {
-                console.error('Ошибка восстановления:', reloadError);
-                showError('Критическая ошибка! Перезагрузите страницу');
-            }
-        }
-    };       // Обновление состояния отзывов через API
-    state.pendingReviews = pending;
-    state.approvedReviews = approved;
-    
+    reader.readAsDataURL(file);
+  },
+
+  // Очистка превью
+  clearPreview(container) {
+    const form = document.getElementById('add-carousel-form');
+    form.querySelector('input[type="file"]').value = '';
+    container.querySelector('.image-preview').style.display = 'none';
+    container.querySelector('.preview-image').src = '';
+  },
+
+  // Обработка отправки формы
+  async handleFormSubmit(form, previewContainer) {
+    const formData = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn.textContent;
+
     try {
-        // Для approve: отправка PUT запроса
-        if (action === 'approve') {
-            const response = await logApiResponse(`/api/reviews/${reviewId}/approve`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Ошибка одобрения отзыва');
-        }
-        
-        // Для delete: отправка DELETE запроса
-        if (action === 'delete') {
-            const type = originalPending.some(r => r.id === reviewId) ? 'pending' : 'approved';
-            const response = await logApiResponse(`/api/reviews/${type}/${reviewId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            if (!response.ok) throw new Error('Ошибка удаления отзыва');
-        }
-    
-        // Обновление данных после успешного запроса
-        const [pendingRes, approvedRes] = await Promise.all([
-            fetch('/api/reviews/pending'),
-            fetch('/api/reviews/approved')
-        ]);
-        
-        state.pendingReviews = await pendingRes.json();
-        state.approvedReviews = await approvedRes.json();
-        
-        renderReviews();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Загрузка...';
+      utils.handleLoading(this.section, true);
+
+      // Отправка данных
+      await API.post('/carousel', formData);
+      
+      // Очистка формы
+      form.reset();
+      this.clearPreview(previewContainer);
+      await this.loadSlides();
+      
+      utils.showMessage('Слайд успешно добавлен', 'success');
     } catch (error) {
-        console.error('Ошибка:', error);
-        // Восстановление состояния через API при ошибке
-        const [pendingRes, approvedRes] = await Promise.all([
-            fetch('/api/reviews/pending'),
-            fetch('/api/reviews/approved')
-        ]);
-        
-        state.pendingReviews = await pendingRes.json();
-        state.approvedReviews = await approvedRes.json();
-        
-        renderReviews();
-        showError(`${error.message} (изменения отменены)`);
+      utils.showMessage(`Ошибка: ${error.message}`, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalBtnText;
+      utils.handleLoading(this.section, false);
     }
-    
-    const setupReviewEventListeners = () => {
-        DOM.reviewsSection.addEventListener('click', async (e) => {
-            const button = e.target.closest('[data-action]');
-            if (!button) return;
-            
-            const card = button.closest('.review-card');
-            const reviewId = parseInt(card.dataset.id);
-            const action = button.dataset.action;
-            
-            await handleReviewAction(action, reviewId);
-        });
-    };
-    
-    const setupEventListeners = () => {
-        DOM.tabs.forEach(tab => tab.addEventListener('click', handleTabSwitch));
-        DOM.categoryForm.addEventListener('submit', handleCategorySubmit);
-        DOM.productForm.addEventListener('submit', handleProductSubmit);
-        DOM.searchInput.addEventListener('input', handleSearch);
-        document.addEventListener('click', handleDelete);
-    
-        // Обработчик отправки отзывов
-        const reviewForm = document.getElementById('reviewForm');
-        if (reviewForm) {
-            reviewForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                
-                try {
-                    const response = await logApiResponse('/api/reviews', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify({
-                            author_name: formData.get('name'),
-                            email: formData.get('email'),
-                            phone: formData.get('phone'),
-                            rating: parseInt(formData.get('rating')),
-                            comment: formData.get('content'),
-                            product_id: parseInt(formData.get('product_id')) // Добавлен product_id
-                        })
-                    });
-    
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.error || 'Ошибка отправки отзыва');
-                    }
-    
-                    alert('Отзыв успешно отправлен на модерацию!');
-                    e.target.reset();
-                } catch (error) {
-                    console.error('Ошибка:', error);
-                    alert(error.message);
-                }
-            });
-        }
-        setupReviewEventListeners();
-    };
-    
-    const handleTabSwitch = async (e) => {
-        const tab = e.target;
-        if (!tab?.dataset.tab) return;
-    
-        DOM.tabs.forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.admin-section').forEach(section => {
-            section.classList.remove('active');
-        });
-    
-        tab.classList.add('active');
-        state.currentTab = tab.dataset.tab;
-        
-        const activeSection = document.getElementById(`${state.currentTab}-section`);
-        if (activeSection) {
-            activeSection.classList.add('active');
-    
-            switch(state.currentTab) {
-                case 'full':
-                case 'quick-orders':
-                    try {
-                        const endpoint = state.currentTab === 'full' 
-                            ? '/api/orders' 
-                            : '/api/quick-orders';
-                        
-                        const response = await logApiResponse(endpoint, {
-                            headers: {
-                                'Authorization': `Bearer ${localStorage.getItem('token')}`
-                            }
-                        });
-                        
-                        if (!response.ok) throw new Error('Ошибка загрузки заказов');
-                        const orders = await response.json();
-                        
-                        renderOrdersSection(state.currentTab, orders);
-                    } catch (error) {
-                        console.error('Ошибка:', error);
-                        showError('Ошибка загрузки заказов');
-                    }
-                    break;
-                    
-                case 'reviews':
-                    try {
-                        const [pendingRes, approvedRes] = await Promise.all([
-                            fetch('/api/reviews/pending'),
-                            fetch('/api/reviews/approved')
-                        ]);
-                        
-                        state.pendingReviews = await pendingRes.json();
-                        state.approvedReviews = await approvedRes.json();
-                        
-                        renderReviews();
-                    } catch (error) {
-                        console.error('Ошибка:', error);
-                        showError('Ошибка загрузки отзывов');
-                    }
-                    break;
-            }
-        }
-    };
-    
-    const renderAll = async () => {
-        try {
-          const [
-            productsRes,
-            categoriesRes,
-            pendingRes,
-            approvedRes,
-            ordersRes,
-            quickOrdersRes
-          ] = await Promise.all([
-            fetch(CONFIG.PRODUCTS_DATA_URL),
-            fetch(CONFIG.CATEGORIES_DATA_URL),
-            fetch(CONFIG.PENDING_REVIEWS_URL),
-            fetch(CONFIG.APPROVED_REVIEWS_URL),
-            fetch(CONFIG.ORDERS_DATA_URL),
-            fetch(CONFIG.QUICK_ORDERS_DATA_URL)
-          ]);
-      
-          // Продукты
-          const productsJson = await productsRes.json();
-          const productsData = Array.isArray(productsJson) ? productsJson : productsJson.data;
-          state.products       = transformProducts(productsData);
-      
-          // Остальные сущности
-          state.flatCategories = await categoriesRes.json();
-          state.categories     = buildCategoryTree(state.flatCategories);
-          state.pendingReviews = await pendingRes.json();
-          state.approvedReviews= await approvedRes.json();
-          state.orders         = await ordersRes.json();
-          state.quickOrders    = await quickOrdersRes.json();
-      
-          // Рендер всех табов
-          renderCategories();
-          renderProducts();
-          renderReviews();
-          renderOrdersSection('full');
-          renderOrdersSection('quick-orders');
-      
-        } catch (error) {
-          console.error('Ошибка инициализации:', error);
-          showError('Ошибка загрузки данных');
-        }
-      };
-      
-    
-      async function init() {
-        const user = JSON.parse(localStorage.getItem('currentUser'));
-        if (!user || user.role !== 'admin') {
-            window.location.href = '/login.html';
-            return;
-        }
-        await loadInitialData();
-        await loadOrders();
-        await loadReviews();
-        setupOrderListeners();
-        setupEventListeners();
-        await renderAll();
-        updateCategorySelects();
-        renderReviews();
-    }
+  },
 
-    init();
-}
-}); // ← Добавлено в самом конце файла
+  setupDeleteHandlers() {
+    this.slidesList.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('.delete-btn');
+      if (!deleteBtn) return;
+
+      const slideId = deleteBtn.dataset.id;
+      const slideCard = deleteBtn.closest('.slide-card');
+      const slideTitle = slideCard.querySelector('h3')?.textContent || 'Без названия';
+
+      if (!confirm(`Удалить слайд "${slideTitle}"?`)) return;
+
+      try {
+        utils.handleLoading(this.section, true);
+        await API.delete(`/carousel/${slideId}`);
+        
+        // Удаляем элемент из DOM
+        slideCard.remove();
+        
+        // Проверяем пустой список
+        if (!this.slidesList.children.length) {
+          this.emptyState.style.display = 'flex';
+        }
+        
+        utils.showMessage('Слайд успешно удален', 'success');
+      } catch (error) {
+        console.error('Ошибка удаления:', error);
+        utils.showMessage('Не удалось удалить слайд', 'error');
+      } finally {
+        utils.handleLoading(this.section, false);
+      }
+    });
+  },
+
+    };
+
+
+
+    const initForms = () => {
+      document.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target.closest('form');
+        if (!form) return;
+    
+        // Отбрасываем попытки отправить body в GET
+        if (form.method.toUpperCase() === 'GET') {
+          // либо просто игнорируем, либо даём браузеру сделать стандартный сабмит:
+          // form.submit();
+          return;
+        }
+    
+        const container = form.closest('.admin-section') || document.body;
+        utils.handleLoading(container, true);
+    
+        try {
+          const formData = new FormData(form);
+          const response = await API.request(
+            form.method.toUpperCase(),
+            form.dataset.action || form.action,
+            formData
+          );
+    
+          utils.showMessage('Успешно сохранено', 'success');
+          if (form.method.toUpperCase() === 'POST') form.reset();
+          
+        } finally {
+          utils.handleLoading(container, false);
+        }
+      });
+    };
+    
+    const init = () => {
+      // Инициализация модуля категорий
+      Categories.init();
+      Categories.setupDeleteHandlers();
+      Products.init();
+      Reviews.init();
+      Orders.init();
+      Carousel.init();
+      initForms();
+    };
+  
+    return {
+      init,
+      API
+    };
+  })();
+  
+  document.addEventListener('DOMContentLoaded', AdminManager.init);

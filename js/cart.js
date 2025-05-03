@@ -11,6 +11,14 @@ class CartPage {
       // Загрузка корзины из локального хранилища
       try {
         this.items = JSON.parse(localStorage.getItem('cart')) || [];
+        this.items = this.items.map(item => ({
+          id: item.variant_id || item.id, // Важно: должен быть ID варианта товара
+          price: Number(item.price),
+          quantity: Number(item.quantity),
+          weight: Number(item.weight) || 0,
+          name: item.name,
+          image: item.image
+        })).filter(i => i.id && !isNaN(i.price) && !isNaN(i.quantity));
       } catch (err) {
         console.error('Ошибка загрузки корзины из localStorage:', err);
         this.items = [];
@@ -83,7 +91,7 @@ class CartPage {
             <button class="quantity-btn plus" data-index="${idx}">+</button>
           </td>
           <td class="item-sum">${sum.toFixed(2)} ₽</td>
-          <td><button class="remove-btn" data-index="${idx}">×</button></td>
+                  <td><button class="remove-btn" data-id="${item.id}" data-weight="${item.weight}">×</button></td>
         `;
         this.itemsContainer.appendChild(tr);
       });
@@ -99,11 +107,22 @@ class CartPage {
   
         if (minus) this.changeQuantity(minus.dataset.index, -1);
         if (plus) this.changeQuantity(plus.dataset.index, 1);
-        if (remove) this.removeItem(remove.dataset.index);
+        if (remove) {
+          const id = parseInt(remove.dataset.id);
+          const weight = remove.dataset.weight;
+          this.removeItemByIdAndWeight(id, weight);
+      }
         if (e.target.closest('.checkout-btn')) this.handleCheckout();
         if (e.target.closest('.one-click-btn')) this.handleQuickOrder();
       });
     }
+
+    removeItemByIdAndWeight(id, weight) {
+      this.items = this.items.filter(item => !(item.id === id && item.weight === weight));
+      this.saveCart();
+      this.renderCartPage();
+      this.renderCartPreview();
+  }
   
     changeQuantity(idxStr, delta) {
       const idx = parseInt(idxStr, 10);

@@ -228,20 +228,22 @@
                     
                     <div class="form-grid">
                         <!-- Динамический список городов/районов -->
-                        <div class="form-group">
-                            <label>Населённый пункт и район:</label>
-                            <input 
-                                type="text"
-                                id="location-input"
-                                name="location"            
-                                placeholder="Начните вводить город"
-                                required
-                                list="locations-list">
-                            <datalist id="locations-list">
-                                <!-- Динамически заполняется из JSON -->
-                            </datalist>
-                            <div id="delivery-cost"></div>
-                        </div>
+                        <!-- Вместо вашего текущего <datalist>… используйте свой <ul> -->
+                            <div class="form-group location-field" style="position: relative;">
+                                <label>Населённый пункт и район:</label>
+                                <input
+                                  type="text"
+                                  id="location-input"
+                                  name="location"
+                                  placeholder="Начните вводить город"
+                                  autocomplete="off"
+                                  required
+                                >
+                                <ul id="locations-list" class="dropdown-list"></ul>
+                                <div id="delivery-cost"></div>
+                              </div>
+                              
+  
     
                         <div class="form-group">
                             <label>Телефон:</label>
@@ -380,7 +382,7 @@
       <p><strong>+7 (938) 441-39-13</strong><br><a href="#">Заказать звонок</a></p>
       <p><img src="/images/email.png" alt=""> info@zuf-zuf.ru</p>
       <p><img src="/images/location.png" alt=""> Сочи, ул. Яна Фабрициуса 58/5</p>
-      <p><img src="/images/clock.png" alt=""> 7 дней в неделю<br>с 08:00 до 19:00</p>
+      <p><img src="/images/clock.jpg" alt=""> 7 дней в неделю<br>с 08:00 до 19:00</p>
       <p>ИП Немыкин Дмитрий Юрьевич<br>ИНН 236003969303</p>
     </div>
   </div>
@@ -408,7 +410,7 @@
     <script src="/js/main.js"></script>
     <script src="/js/catalog.js"></script>
     <script src="/js/cart.js"></script> <!-- Подключите ваш класс корзины -->
-    <script src="/data/products.js"></script>
+  
     <script src="/js/new-order.js" type="module"></script>
 
 <!-- Добавить в HTML (лучше перед закрывающим тегом body) -->

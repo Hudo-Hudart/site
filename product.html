@@ -242,11 +242,12 @@
                     </button>
                     
                     <div class="action-icons">
-                        <button class="icon-btn favorite-btn" data-action="favorite">
-                            <img src="/images/heart.png" alt="Избранное">
-                            <span class="counter">0</span>
-                        </button>
-        
+                        <button class="icon-btn favorite-btn" 
+                        id="add-to-favorites"
+                        data-action="favorite">
+                    <img src="/images/heart.png" alt="Избранное">
+                </button>
+                
                         <button class="icon-btn compare-btn" data-action="compare">
                             <img src="/images/compet.png" alt="Сравнение">
                             <span class="counter">0</span>
@@ -324,7 +325,7 @@
       <p><strong>+7 (938) 441-39-13</strong><br><a href="#">Заказать звонок</a></p>
       <p><img src="/images/email.png" alt=""> info@zuf-zuf.ru</p>
       <p><img src="/images/location.png" alt=""> Сочи, ул. Яна Фабрициуса 58/5</p>
-      <p><img src="/images/clock.png" alt=""> 7 дней в неделю<br>с 08:00 до 19:00</p>
+      <p><img src="/images/clock.jpg" alt=""> 7 дней в неделю<br>с 08:00 до 19:00</p>
       <p>ИП Немыкин Дмитрий Юрьевич<br>ИНН 236003969303</p>
     </div>
   </div>
@@ -351,38 +352,190 @@
 <!-- внизу product.html, вместо старого <script src="/data/products.js"> -->
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-          // допустим, у вас в URL ?id=123
-          const params = new URLSearchParams(window.location.search);
-          const id = params.get('id');
-          if (!id) {
-            showError('ID товара не указан');
+            const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    if (!id) return showError('Товар не найден');
+
+    try {
+        const response = await fetch(`/api/products/${id}`);
+        if (!response.ok) throw new Error('Ошибка загрузки');
+        const product = await response.json();
+
+        // Проверка основных элементов
+        if (!document.getElementById('product-title')) {
+            console.error('Элемент product-title не найден');
             return;
-          }
-        
-          try {
-            const res = await fetch(`/api/products/${id}`);
-            if (!res.ok) throw new Error('Не удалось загрузить товар');
-            const product = await res.json();
-            renderProductDetails(product);
-          } catch (e) {
-            console.error(e);
-            showError('Ошибка при загрузке товара');
-          }
-        });
-        
-        function renderProductDetails(p) {
-          // здесь ваша логика создания карточки / заполнения полей:
-          document.getElementById('product-title').textContent = p.title;
-          document.getElementById('product-image').src = p.image_url || '/images/placeholder.png';
-          // и так далее для описания, вариантов, цены, кнопок «в корзину» и т.п.
         }
         
+                // Заполнение основной информации
+                document.getElementById('product-title').textContent = product.title;
+                document.getElementById('product-sku').textContent = `Артикул: ${product.sku}`;
+                document.getElementById('product-description').textContent = product.description;
+                const mainImage = document.getElementById('product-main-image');
+                mainImage.src = product.imageUrl;
+                mainImage.onerror = () => mainImage.src = '/images/placeholder.png';
+        
+                // Варианты веса
+                const weightSelect = document.getElementById('weight-select');
+                weightSelect.innerHTML = product.variants.map(v => `
+                    <option value="${v.weight}" 
+                            data-price="${v.price}"
+                            data-variant-id="${v.variant_id}"
+                            data-weight-unit="${v.weight_unit || 'г'}">
+                        ${v.weight} ${v.weight_unit || 'г'} - ${v.price} ₽
+                    </option>
+                `).join('');
+        
+                // Обработчики изменения цены
+                const updatePrice = () => {
+                    const selected = weightSelect.selectedOptions[0];
+                    document.getElementById('product-price').textContent = `${selected.dataset.price} ₽`;
+                };
+                weightSelect.addEventListener('change', updatePrice);
+                updatePrice();
+        
+                // Характеристики товара
+                const specsGrid = document.getElementById('specs-grid');
+                specsGrid.innerHTML = `
+                    <div class="spec-item">
+                        <span class="spec-name">Бренд:</span>
+                        <span class="spec-value">${product.brand}</span>
+                    </div>
+                    <div class="spec-item">
+                        <span class="spec-name">Возраст:</span>
+                        <span class="spec-value">${product.age_group}</span>
+                    </div>
+                    <div class="spec-item">
+                        <span class="spec-name">Размер:</span>
+                        <span class="spec-value">${product.size_group}</span>
+                    </div>
+                `;
+        
+                // Добавление в корзину
+                const addToCartBtn = document.getElementById('add-to-cart');
+                addToCartBtn.addEventListener('click', () => {
+                    const selected = weightSelect.selectedOptions[0];
+                    if (!selected) return alert('Выберите вариант товара');
+        
+                    const productData = {
+                        id: product.id,
+                        variantId: selected.dataset.variantId,
+                        name: product.title,
+                        price: parseFloat(selected.dataset.price),
+                        image: product.imageUrl,
+                        weight: `${selected.value} ${selected.dataset.weightUnit}`,
+                        sku: product.sku
+                    };
+        
+                    cart.addItem(productData, 1, productData.weight);
+                    showNotification('Товар добавлен в корзину!');
+                });
+        
+                // Избранное
+                const favoriteBtn = document.getElementById('add-to-favorites');
+                const updateFavoriteButton = () => {
+                    const selected = weightSelect.selectedOptions[0];
+                    if (!selected) return;
+        
+                    const isFavorite = favorites.items.some(item => 
+                        item.id === product.id && 
+                        item.variantId === selected.dataset.variantId
+                    );
+                    
+                    favoriteBtn.classList.toggle('active', isFavorite);
+                };
+        
+                favoriteBtn.addEventListener('click', () => {
+                    const selected = weightSelect.selectedOptions[0];
+                    if (!selected) return alert('Выберите вариант товара');
+        
+                    const productData = {
+                        id: product.id,
+                        variantId: selected.dataset.variantId,
+                        name: product.title,
+                        price: parseFloat(selected.dataset.price),
+                        weight: `${selected.value} ${selected.dataset.weightUnit}`,
+                        image: product.imageUrl
+                    };
+        
+                    favorites.toggleFavorite(productData);
+                    updateFavoriteButton();
+                    showNotification(
+                        favorites.items.some(item => item.id === product.id) 
+                        ? 'Добавлено в избранное' 
+                        : 'Удалено из избранного'
+                    );
+                });
+        
+                // Обновляем состояние кнопки при изменении варианта
+                weightSelect.addEventListener('change', updateFavoriteButton);
+                updateFavoriteButton();
+        
+            } catch (e) {
+                showError('Ошибка загрузки товара');
+                console.error(e);
+            }
+        });
+       
         function showError(msg) {
-          const err = document.getElementById('error-message');
-          err.textContent = msg;
-          err.style.display = 'block';
+            document.querySelector('.product-details').innerHTML = `
+                <div class="error">
+                    <h2>${msg}</h2>
+                    <a href="/catalog.html">Вернуться в каталог</a>
+                </div>
+            `;
+        }
+        
+        function showNotification(text) {
+            const notification = document.createElement('div');
+            notification.className = 'cart-notification';
+            notification.textContent = text;
+            
+            document.body.appendChild(notification);
+            setTimeout(() => {
+                notification.classList.add('hide');
+                setTimeout(() => notification.remove(), 300);
+            }, 2000);
         }
         </script>
+        
+        <style>
+        .cart-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideIn 0.3s ease-out;
+            z-index: 1000;
+        }
+        
+        .cart-notification.hide {
+            animation: slideOut 0.3s ease-in;
+        }
+        
+        .favorite-btn.active {
+            background-color: #ffeded;
+            border-color: #ff6b6b;
+        }
+        
+        .favorite-btn.active img {
+            filter: invert(26%) sepia(89%) saturate(2109%) hue-rotate(332deg) brightness(97%) contrast(91%);
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(100px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes slideOut {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(100px); opacity: 0; }
+        }
+        </style>
         
 
     <script src="/js/main.js"></script>

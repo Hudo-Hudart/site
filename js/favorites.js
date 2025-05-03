@@ -36,7 +36,7 @@ function getFavoritesTemplate() {
                           ${item.price ? `<div class="price">${item.price.toFixed(2)} ₽</div>` : ''}
                           ${item.weight ? `<div class="weight">${item.weight}</div>` : ''}
                       </div>
-                      <button class="remove-item">
+                        <button class="remove-item" data-id="${item.id}">
                           <svg width="14" height="14" viewBox="0 0 14 14">
                               <path d="M1 13L13 1M1 1L13 13" 
                                     stroke="currentColor" 
