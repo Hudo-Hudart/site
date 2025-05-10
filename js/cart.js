@@ -12,12 +12,13 @@ class CartPage {
       try {
         this.items = JSON.parse(localStorage.getItem('cart')) || [];
         this.items = this.items.map(item => ({
-          id: item.variant_id || item.id, // Важно: должен быть ID варианта товара
-          price: Number(item.price),
-          quantity: Number(item.quantity),
-          weight: Number(item.weight) || 0,
-          name: item.name,
-          image: item.image
+          id:         Number(item.id),          // здесь гарантированно variant_id
+          price:      Number(item.price),
+          quantity:   Number(item.quantity),
+          weight:     Number(item.weight) || 0,
+          weightUnit: item.weightUnit || 'кг',
+          name:       item.name,
+          image:      item.image
         })).filter(i => i.id && !isNaN(i.price) && !isNaN(i.quantity));
       } catch (err) {
         console.error('Ошибка загрузки корзины из localStorage:', err);
@@ -80,7 +81,7 @@ class CartPage {
               <img src="${item.image || '/images/placeholder.webp'}" alt="${item.name}" width="50" onerror="this.src='/images/placeholder.webp'">
               <div>
                 <strong>${item.name}</strong><br>
-                <small>Вес: ${item.weight || 'N/A'} г</small>
+                    <small>Вес: ${item.weight} ${item.weightUnit}</small>
               </div>
             </div>
           </td>
@@ -91,7 +92,9 @@ class CartPage {
             <button class="quantity-btn plus" data-index="${idx}">+</button>
           </td>
           <td class="item-sum">${sum.toFixed(2)} ₽</td>
-                  <td><button class="remove-btn" data-id="${item.id}" data-weight="${item.weight}">×</button></td>
+                              <td><button class="remove-btn" 
+                 data-id="${item.id}" 
+                 data-weight="${item.weight}">×</button></td>
         `;
         this.itemsContainer.appendChild(tr);
       });
@@ -118,7 +121,16 @@ class CartPage {
     }
 
     removeItemByIdAndWeight(id, weight) {
-      this.items = this.items.filter(item => !(item.id === id && item.weight === weight));
+      console.log('Deleting item:', {id, weight});
+      console.log('Current items:', this.items);
+      const numId = Number(id);
+      const numWeight = Number(weight);
+      this.items = this.items.filter(item => {
+        const match = item.id === numId && item.weight === numWeight;
+        console.log(`Item ${item.id}-${item.weight} match: ${match}`);
+        return !match;
+    });
+    console.log('Items after deletion:', this.items);
       this.saveCart();
       this.renderCartPage();
       this.renderCartPreview();
@@ -175,7 +187,7 @@ class CartPage {
         alert('Корзина пуста!');
         return;
       }
-      this.openQuickOrderModal();
+      new QuickOrderModal(this.items);
     }
   
     openQuickOrderModal() {
@@ -221,8 +233,16 @@ class CartPage {
           customer_phone,
           comment: data.get('comment').trim() || '',
           total_amount: this.items.reduce((sum, i) => sum + i.price * i.quantity, 0),
-          items: this.items.map(i => ({ id: i.id, quantity: i.quantity, weight: i.weight || 0, price: i.price }))
+          // Должно быть:
+          items: this.items.map(i => ({
+            product_variant_id: i.id,
+            quantity:           i.quantity,
+            weight:             i.weight || 0,
+            price:              i.price
+          }))
+
         };
+            console.log('📦 QuickOrder payload:', JSON.stringify(payload, null, 2));
   
         try {
           const res = await fetch('/api/quick-orders', {

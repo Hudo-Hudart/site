@@ -139,11 +139,11 @@ class QuickOrderModal {
       const comment = formData.get('comment')?.trim() || '';
   
       const items = this.items.map(i => ({
-        id: i.id,
-        quantity: i.quantity,
-        weight: i.weight || 0,
-        price: i.price
-      }));
+        product_variant_id: i.id,
+        quantity:           i.quantity,
+        weight:             i.weight || 0,
+        price:              i.price
+      }))
       const total_amount = items
         .reduce((sum, it) => sum + it.price * it.quantity, 0);
   
@@ -161,8 +161,17 @@ class QuickOrderModal {
     // При успешном заказе
     handleSuccess() {
       this.close();
-      document.dispatchEvent(new CustomEvent('cart:clear', { detail: { showNotification: true } }));
-    }
+
+    // 2) очищаем localStorage
+    localStorage.removeItem('cart');
+
+    // 3) оповещаем все слушатели — CartPage & мини‑корзина в шапке
+    document.dispatchEvent(new Event('cart-updated'));
+
+    // 4) …и перезагружаем страницу, чтобы сбросить текущее отображение корзины
+    //    (либо, если вам нужна именно страница /cart.html, можно window.location.href = '/cart.html')
+    window.location.reload();
+  }
   
     handleError(err) {
       console.error('Ошибка оформления быстрого заказа:', err);

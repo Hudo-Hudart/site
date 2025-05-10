@@ -254,11 +254,13 @@ class CheckoutPage {
     };
 
     const items = this.items.map(it => ({
-      product_variant_id: it.id,
-      quantity:           Number(it.quantity),
-      weight:             Number(it.weight) || 0,
-      price:              Number(it.price)
+      // используем variantId, который вы теперь явно сохраняете
+      product_variant_id: it.variantId || it.id,
+      quantity:           it.quantity,
+      weight:             it.weight,
+      price:              it.price
     }));
+    
 
     return {
       customer,

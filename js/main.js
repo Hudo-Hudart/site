@@ -124,17 +124,30 @@ class Collection {
             }
         });
     }
-
-    addItem(product, quantity, weight) { 
-        const existingItem = this.items.find(item => 
-            item.id === product.id && item.weight === weight
+    addItem(product, quantity, weight) {
+        const variantId = product.variantId; // пришёл из страницы товара
+        const existing = this.items.find(item =>
+          item.id === variantId && item.weight === weight
         );
-
-        if (existingItem) existingItem.quantity += quantity;
-        else this.items.push({...product, quantity, weight, addedAt: new Date().toISOString()});
-        
+      
+        if (existing) {
+          existing.quantity += quantity;
+        } else {
+          this.items.push({
+            id:         variantId,
+            name:       product.name,
+            price:      product.price,
+            weight:     weight,
+            weightUnit: product.weightUnit || 'кг',
+            image:      product.image,
+            quantity:   quantity,
+            addedAt:    new Date().toISOString()
+          });
+        }
+      
         this.saveCollection();
-    }
+      }
+      
 
     removeItem(criteria) {
         this.items = this.items.filter(item => {
@@ -350,7 +363,7 @@ class Favorites extends Collection {
             </div>
             ${this.items.map(item => this.getItemTemplate(item)).join('')}
             <div class="cart-actions">
-                <a href="/favorites.html" class="open-cart">Открыть избранное</a>
+                <a href="/favorite.html" class="open-cart">Открыть избранное</a>
                 <button class="clear-all">Очистить всё</button>
             </div>`;
     }
@@ -427,6 +440,8 @@ async function initDynamicCatalog() {
         if (combinedCategories.length) {
             catalogMenu.appendChild(createCombinedColumn(combinedCategories));
         }
+        await new Promise(resolve => setTimeout(resolve, 50)); // Даем время на рендеринг
+        adjustMenuPosition();
     } catch (error) {
         console.error('Ошибка каталога:', error);
         const catalogMenu = document.querySelector('.catalog-menu');
@@ -477,6 +492,33 @@ function createCategoryColumn(category) {
     return column;
 }
 
+// Функция корректировки позиции меню
+function adjustMenuPosition() {
+    const menu = document.querySelector('.catalog-menu');
+    if (!menu) return;
+
+    const rect = menu.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+
+    if (rect.right > viewportWidth) {
+        menu.style.left = 'auto';
+        menu.style.right = '0';
+    } else {
+        menu.style.right = 'auto';
+        menu.style.left = '0';
+    }
+}
+
+// Обработчик ресайза окна
+function handleWindowResize() {
+    const menu = document.querySelector('.catalog-menu');
+    if (menu && menu.classList.contains('active')) {
+        adjustMenuPosition();
+    }
+}
+
+window.addEventListener('resize', handleWindowResize);
+
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.catalog-btn')?.addEventListener('mouseenter', () =>
         document.querySelector('.catalog-menu').classList.add('active')
@@ -485,9 +527,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.relatedTarget?.closest('.catalog-dropdown'))
             document.querySelector('.catalog-menu').classList.remove('active');
     });
-    if (document.querySelector('.catalog-dropdown')) initDynamicCatalog();
+    if (document.querySelector('.catalog-dropdown')) {
+        initDynamicCatalog().then(() => {
+            window.addEventListener('resize', handleWindowResize);
+        });
+    }
 });
-
 // Карусель отзывов и загрузка из MySQL
 class TestimonialCarousel {
     constructor() {
@@ -727,7 +772,8 @@ window.addEventListener('DOMContentLoaded', () => {
               variantId: +variantBtn.dataset.variantId,
               name: card.querySelector('.product-name').textContent.trim(),
               price: parseFloat(variantBtn.dataset.price) || 0,
-              weight: `${variantBtn.dataset.weight} ${variantBtn.dataset.weight_unit || 'г'}`,
+    weight: parseFloat(variantBtn.dataset.weight), // число вместо строки
+    weightUnit: variantBtn.dataset.weight_unit || 'г',
               image: card.querySelector('img')?.src || '/images/placeholder.png'
             };
       

@@ -108,10 +108,7 @@ const AdminManager = (() => {
           this.renderOrders(orders, type);
 
           
-          if (!this.exportButtonAdded) {
-            this.addExportButton(container, type);
-            this.exportButtonAdded = true;
-          }
+          this.addExportButton(container, type);
         } catch (error) {
           console.error(`Ошибка загрузки заказов (${type}):`, error);
           utils.showMessage(`Не удалось загрузить ${type === 'full' ? 'обычные' : 'быстрые'} заказы`, 'error');
@@ -125,7 +122,7 @@ const AdminManager = (() => {
           ? document.querySelector('#full-section .orders-container') 
           : document.querySelector('#quick-orders-section .quick-orders-container');
           
-        container.innerHTML = `
+          container.innerHTML = `
           <table class="orders-table">
             <thead>
               <tr>
@@ -165,11 +162,11 @@ const AdminManager = (() => {
                   <td>${this.getStatusBadge(order.status)}</td>
                   <td>
                     <button class="details-btn">🔍 Подробности</button>
-                    ${type === 'full' ? '' : `<button class="status-btn">🔄</button>`}
+
                   </td>
                 </tr>
-                <tr class="order-details" data-id="${order.id}">
-                  <td colspan="${type === 'full' ? 7 : 6}">
+                <tr class="order-details" data-id="${order.id}" data-type="${type}">
+                  <td colspan="7">
                     <div class="details-content">
                       ${this.renderOrderDetails(order, type)}
                     </div>
@@ -180,6 +177,7 @@ const AdminManager = (() => {
           </table>
         `;
       },
+    
 
       renderOrderDetails(order, type) {
         if (type === 'full') {
@@ -196,14 +194,14 @@ const AdminManager = (() => {
                   <ul>
                     ${order.items.map(item => `
                       <li>
-                        Вариант #${item.product_variant_id} - 
-                        ${Number(item.quantity)} × ${Number(item.price).toFixed(2)} ₽
-                        (Вес: ${Number(item.weight).toFixed(2)} кг)
+                        ${item.product_name}
+                        (${item.variant_name})
+                        — ${item.quantity} × ${Number(item.price).toFixed(2)} ₽
                       </li>
                     `).join('')}
                   </ul>
                 </div>
-              ` : ''}
+              ` : '<p>Нет позиций в заказе.</p>'}
               <div class="status-controls">
                 <select class="status-select" data-id="${order.id}">
                   ${Object.keys(this.statusColors)
@@ -216,12 +214,27 @@ const AdminManager = (() => {
             </div>
           `;
         }
-        
+      
         // Для быстрых заказов
         return `
           <div class="details-section">
             <h4>Быстрый заказ #${order.id}</h4>
             <p>Комментарий: ${order.comment || 'нет'}</p>
+            ${order.items?.length ? `
+              <div class="order-items">
+                <h5>Позиции:</h5>
+                <ul>
+                  ${order.items.map(item => `
+                    <li>
+                      ${item.product_name}
+                      (${item.variant_name})
+                      — ${item.quantity} × ${Number(item.price).toFixed(2)} ₽
+                     
+                    </li>
+                  `).join('')}
+                </ul>
+              </div>
+            ` : '<p>Нет позиций в быстром заказе.</p>'}
             <div class="status-controls">
               <select class="status-select" data-id="${order.id}">
                 ${['new', 'processing', 'completed', 'cancelled']
@@ -233,6 +246,7 @@ const AdminManager = (() => {
           </div>
         `;
       },
+      
 
       getStatusBadge(status) {
         return `<span class="status-badge" style="background: ${this.statusColors[status]}">
@@ -252,11 +266,20 @@ const AdminManager = (() => {
       },
 
       addExportButton(container, type) {
+        // Удаляем старую кнопку, если есть
+        const oldBtn = container.parentNode.querySelector('.export-btn');
+        if (oldBtn) oldBtn.remove();
+      
         const exportBtn = document.createElement('button');
         exportBtn.className = 'export-btn';
         exportBtn.textContent = 'Экспорт в CSV';
         exportBtn.onclick = () => this.exportToCSV(type);
-        container.parentNode.insertBefore(exportBtn, container);
+        
+        // Вставляем перед таблицей заказов
+        const ordersTable = container.querySelector('.orders-table');
+        if (ordersTable) {
+          container.insertBefore(exportBtn, ordersTable);
+        }
       },
 
       async exportToCSV(type) {
@@ -313,7 +336,10 @@ const AdminManager = (() => {
             const row = e.target.closest('.order-row');
             if (!row) return;
 
-            const details = document.querySelector(`.order-details[data-id="${row.dataset.id}"]`);
+            // Заменяем строку поиска details
+          const details = document.querySelector(
+            `.order-details[data-id="${row.dataset.id}"][data-type="${row.dataset.type}"]`
+          );
             details.classList.toggle('active');
           });
         });

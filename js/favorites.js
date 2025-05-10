@@ -28,7 +28,7 @@ function getFavoritesTemplate() {
           <div class="favorites-items">
               ${favorites.items.map(item => `
                   <div class="favorite-item" data-id="${item.id}">
-                      <img src="${item.image}" 
+                      <img style="height: 200px" src="${item.image}" 
                            alt="${item.name}"
                            onerror="this.src='/images/placeholder.png'">
                       <div class="favorite-info">

@@ -7,282 +7,277 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <!-- Внутри тега <header class="header"> заменяем существующую структуру на эту: -->
-        <header class="header">
-            <div class="header-main">
-                <!-- Левый блок: Логотип -->
-                <div class="logo-block">
-                    <a href="/index.html">
-                        <img src="/images/logo.png" alt="ЗооМаркет" class="logo">
-                    </a>
+    <header class="header">
+        <div class="header-main">
+            <!-- Левый блок: Логотип -->
+            <div class="logo-block">
+                <a href="/index.html">
+                    <img src="/images/logo.png" alt="ЗооМаркет" class="logo">
+                </a>
+            </div>
+    
+    
+            <!-- Центральный блок: Поиск + Преимущества -->
+            <div class="center-block">
+                <!-- Поисковая строка -->
+                <div class="search-container">
+                    <input type="text" 
+                           placeholder="Поиск по каталогу..." 
+                           class="search-input">
+                    <button class="search-button">Найти</button>
                 </div>
-        
-        
-                <!-- Центральный блок: Поиск + Преимущества -->
-                <div class="center-block">
-                    <!-- Поисковая строка -->
-                    <div class="search-container">
-                        <input type="text" 
-                               placeholder="Поиск по каталогу..." 
-                               class="search-input">
-                        <button class="search-button">Найти</button>
+    
+                <!-- Блок преимуществ -->
+                <div class="advantages-container">
+                    <div class="advantage">
+                        <img src="/images/delivery.png" alt="Доставка">
+                        <span>БЕСПЛАТНАЯ ДОСТАВКА<br>ДО ПОДЪЕЗДА ПО ГОРОДУ СОЧИ</span>
                     </div>
-        
-                    <!-- Блок преимуществ -->
-                    <div class="advantages-container">
-                        <div class="advantage">
-                            <img src="/images/delivery.png" alt="Доставка">
-                            <span>БЕСПЛАТНАЯ ДОСТАВКА<br>ДО ПОДЪЕЗДА ПО ГОРОДУ СОЧИ</span>
-                        </div>
-                        <div class="advantage">
-                            <img src="/images/gift-icon.webp" alt="Бонусы">
-                            <span>БОНУСЫ ДО 5% НА ВЕСЬ<br>АССОРТИМЕНТ</span>
-                        </div>
-                        <div class="advantage">
-                            <img src="/images/consultant-icon.webp" alt="Консультанты">
-                            <span>ПРОФЕССИОНАЛЬНЫЕ<br>КОНСУЛЬТАНТЫ</span>
-                        </div>
+                    <div class="advantage">
+                        <img src="/images/gift-icon.webp" alt="Бонусы">
+                        <span>БОНУСЫ ДО 5% НА ВЕСЬ<br>АССОРТИМЕНТ</span>
+                    </div>
+                    <div class="advantage">
+                        <img src="/images/consultant-icon.webp" alt="Консультанты">
+                        <span>ПРОФЕССИОНАЛЬНЫЕ<br>КОНСУЛЬТАНТЫ</span>
                     </div>
                 </div>
-        
-                <!-- Правый блок: Контакты + Иконки -->
-                <div class="right-block">
-                    <!-- Контактная информация -->
-                    <div class="contacts">
-                        <div class="phone">+7 (938) 441-39-13</div>
-                        <div class="contact-links">
-                            <a href="#" class="callback-link">Заказать звонок</a>
-                            <div class="dropdown">
-                                <span class="dots">•••</span>
-                                <div class="dropdown-content">
-                                    <div class="contact-info">
-                                        <p>Сочи, ул. Яна Фабрициуса 58/5</p>
-                                        <p>7 дней в неделю<br>с 08:00 до 19:00</p>
-                                        <p>Email: <a href="mailto:info@zuf-zuf.ru">info@zuf-zuf.ru</a></p>
-                                    </div>
+            </div>
+    
+            <!-- Правый блок: Контакты + Иконки -->
+            <div class="right-block">
+                <!-- Контактная информация -->
+                <div class="contacts">
+                    <div class="phone">+7 (938) 441-39-13</div>
+                    <div class="contact-links">
+                        <a href="#" class="callback-link">Заказать звонок</a>
+                        <div class="dropdown">
+                            <span class="dots">•••</span>
+                            <div class="dropdown-content">
+                                <div class="contact-info">
+                                    <p>Сочи, ул. Яна Фабрициуса 58/5</p>
+                                    <p>7 дней в неделю<br>с 08:00 до 19:00</p>
+                                    <p>Email: <a href="mailto:info@zuf-zuf.ru">info@zuf-zuf.ru</a></p>
                                 </div>
                             </div>
                         </div>
                     </div>
-        
-                    <!-- Иконки действий -->
-                    <div class="header-icons">
-                        <!-- Избранное -->
-                        <div class="icon-dropdown favorites">
-                            <div class="icon-block">
+                </div>
+    
+                <!-- Иконки действий -->
+                <div class="header-icons">
+                    <!-- Избранное -->
+                    <div class="icon-dropdown favorites">
+                        <div class="icon-block">
                             <img src="/images/heart.png" alt="Избранное">
-                             </div>
+                        </div>
+                        <span class="counter">0</span>
+                        <div class="dropdown-content">
+                            <div class="dropdown-header">
+                                <h4>Избранное</h4>
+                                <button class="clear-all">Очистить</button>
+                            </div>
+                            <div class="items-list"></div>
+                                <div class="dropdown-footer hidden">
+                                <a href="/favorite.html" class="go-to-favorites">
+                                    Перейти к избранному
+                                </a>
+                                </div>
+                       <!--    <div class="empty-message">
+                                <img src="/images/heart.png" alt="Избранное" class="empty-icon">
+                                <span>В вашем избранном пока пусто</span>
+                            </div> -->
+                        </div>
+                    </div>
+                
+                    <!-- Сравнение -->
+                    <div class="icon-dropdown compare">
+                        <div class="icon-block">
+                            <img src="/images/compet.png" alt="Сравнение">
+                        </div>
+                        <div class="dropdown-content">
+                            <div class="dropdown-header">
+                                <h4>Сравнение</h4>
+                                <button class="clear-all">Очистить</button>
+                            </div>
+                            <div class="items-list"></div>
+                            <div class="empty-message">
+                                <img src="/images/compet.png" alt="Сравнение" class="empty-icon">
+                                <span>Товары для сравнения не выбраны</span>
+                            </div>
+                        </div>
+                    </div>
+                
+                    <!-- Корзина -->
+                    <div class="icon-dropdown cart">
+                        <div class="icon-block">
+                        <img src="/images/cart.png" alt="Корзина">
+                        </div>
                             <span class="counter">0</span>
                             <div class="dropdown-content">
                                 <div class="dropdown-header">
-                                    <h4>Избранное</h4>
+                                    <h4>Ваша корзина</h4>
                                     <button class="clear-all">Очистить</button>
                                 </div>
-                                <div class="items-list"></div>
-                                <div class="empty-message">
-                                    <img src="/images/heart.png" alt="Избранное" class="empty-icon">
-                                    <span>В вашем избранном пока пусто</span>
-                                </div>
-                            </div>
-                        </div>
-                    
-                        <!-- Сравнение -->
-                        <div class="icon-dropdown compare">
-                            <div class="icon-block">
-                                <img src="/images/compet.png" alt="Сравнение">
-                            </div>
-                            <div class="dropdown-content">
-                                <div class="dropdown-header">
-                                    <h4>Сравнение</h4>
-                                    <button class="clear-all">Очистить</button>
-                                </div>
-                                <div class="items-list"></div>
-                                <div class="empty-message">
-                                    <img src="/images/compet.png" alt="Сравнение" class="empty-icon">
-                                    <span>Товары для сравнения не выбраны</span>
-                                </div>
-                            </div>
-                        </div>
-                    
-                        <!-- Корзина -->
-                        <div class="icon-dropdown cart">
-                            <div class="icon-block">
-                            <img src="/images/cart.png" alt="Корзина">
-                            </div>
-                                <span class="counter">0</span>
-                                <div class="dropdown-content">
-                                    <div class="dropdown-header">
-                                        <h4>Ваша корзина</h4>
-                                        <button class="clear-all">Очистить</button>
-                                    </div>
 
-                                     <!-- Контейнер для списка товаров -->
-                                    <div class="items-list"></div>
-                                    
-                                    <!-- Добавим иконку для пустой корзины -->
-                                    <div class="empty-message">
-                                        <img src="/images/cart.png" alt="Корзина" class="empty-icon">
-                                        <span>В вашей корзине пока пусто</span>
-                                    </div>
-                                </div>
-                        </div>
-                    
-                        <!-- Личный кабинет -->
-                        <div class="icon-dropdown account">
-                            <div class="icon-block">
-                                <img src="/images/lcab.png" alt="Кабинет">
-                            </div>
-                            <div class="dropdown-content">
-                                <!-- Блок авторизации -->
-                                <div class="auth-buttons">
-                                    <button class="login-btn">Войти</button>
-                                    <button class="register-btn">Регистрация</button>
-                                </div>
+                                 <!-- Контейнер для списка товаров -->
+                                <div class="items-list"></div>
                                 
-                                <!-- Информация о пользователе -->
-                                <div class="user-info" id="userInfo" style="display: none;">
-                                    <p>Вы вошли как: <span id="currentUserEmail"></span></p>
-                                    <button id="adminPanelBtn" style="display: none;">Админ-панель</button>
-                                    <button id="logoutBtn">Выйти</button>
+                                <!-- Добавим иконку для пустой корзины -->
+                                <div class="empty-message">
+                                    <img src="/images/cart.png" alt="Корзина" class="empty-icon">
+                                    <span>В вашей корзине пока пусто</span>
                                 </div>
+                            </div>
+                    </div>
+                
+                    <!-- Личный кабинет -->
+                    <div class="icon-dropdown account">
+                        <div class="icon-block">
+                            <img src="/images/lcab.png" alt="Кабинет">
+                        </div>
+                        <div class="dropdown-content">
+                            <!-- Блок авторизации -->
+                            <div class="auth-buttons">
+                                <button class="login-btn">Войти</button>
+                                <button class="register-btn">Регистрация</button>
+                            </div>
+                            
+                            <!-- Информация о пользователе -->
+                            <div class="user-info" id="userInfo" style="display: none;">
+                                <p>Вы вошли как: <span id="currentUserEmail"></span></p>
+                                <button id="adminPanelBtn" style="display: none;">Админ-панель</button>
+                                <button id="logoutBtn">Выйти</button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </header>
-
-        <div id="loginModal" class="modal">
-            <div class="modal-content">
-                <span class="close">&times;</span>
-                <h2>Вход в аккаунт</h2>
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label>Email:</label>
-                        <input type="email" id="loginEmail" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Пароль:</label>
-                        <input type="password" id="loginPassword" required>
-                    </div>
-                    <button type="submit">Войти</button>
-                </form>
-            </div>
         </div>
-
-    <!-- Основная навигация -->
-    <!-- Основная навигация -->
-<nav class="main-nav">
-    <div class="nav-container">
-        <!-- Блок каталога -->
-        <div class="catalog-dropdown">
-            <button class="catalog-btn">
-                <div class="hamburger">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+    </header>
+    <div id="loginModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Вход в аккаунт</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>Email:</label>
+                    <input type="email" id="loginEmail" required>
                 </div>
-                <span>КАТАЛОГ</span>
-            </button>
-            
-            <!-- Контейнер меню (заполняется через JS) -->
-            <div class="catalog-menu" data-catalog-container>
-                <!-- Динамическое содержимое -->
-            </div>
-        </div>
-
-        <!-- Основные пункты меню -->
-        <div class="nav-items">
-            <a href="#about">О КОМПАНИИ</a>
-            <a href="#delivery">ДОСТАВКА</a>
-            <a href="#payment">ОПЛАТА</a>
-            <a href="#sales">АКЦИИ</a>
-            <a href="#brands">БРЕНДЫ</a>
-            <a href="#blog">БЛОГ</a>
-            <a href="#contacts">КОНТАКТЫ</a>
+                <div class="form-group">
+                    <label>Пароль:</label>
+                    <input type="password" id="loginPassword" required>
+                </div>
+                <button type="submit">Войти</button>
+            </form>
         </div>
     </div>
+<!-- Основная навигация -->
+<nav class="main-nav">
+<div class="nav-container">
+    <!-- Блок каталога -->
+    <div class="catalog-dropdown">
+        <button class="catalog-btn">
+            <div class="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span>КАТАЛОГ</span>
+        </button>
+        
+        <!-- Контейнер меню (заполняется через JS) -->
+        <div class="catalog-menu" data-catalog-container>
+            <!-- Динамическое содержимое -->
+        </div>
+    </div>
+
+    <!-- Основные пункты меню -->
+    <div class="nav-items">
+        <a href="#about">О КОМПАНИИ</a>
+        <a href="#delivery">ДОСТАВКА</a>
+        <a href="#payment">ОПЛАТА</a>
+        <a href="#sales">АКЦИИ</a>
+        <a href="#brands">БРЕНДЫ</a>
+        <a href="#blog">БЛОГ</a>
+        <a href="#contacts">КОНТАКТЫ</a>
+    </div>
+</div>
 </nav>
-
    <!-- Основное содержимое -->
- <main class="favorites-wrapper">
-       <div class="favorites-page">
-         <div class="breadcrumbs">
-           <a href="/">Главная</a> — <span>Избранное</span>
-         </div>
-         <h1 class="favorites-title">Избранное</h1>
-         <!-- Здесь будет GRID-контейнер карточек -->
-         <section id="favorites-list" class="product-list">
-           <!-- Сюда скриптом будут добавляться карточки товаров -->
-         </section>
-       </div>
-    </main>
-          
+   <main class="catalog-wrapper"> <!-- Используем класс каталога -->
+    <div class="container"> <!-- Добавляем контейнер как в каталоге -->
+      <div class="breadcrumbs">
+        <a href="/">Главная</a> — <span>Избранное</span>
+      </div>
+      <!--<h1 class="page-title">Избранное</h1>  Используем класс заголовка каталога -->
       
-
+      <!-- Меняем классы на соответствующие каталогу -->
+      <section id="favorites-list" class="product-list catalog-grid">
+        <!-- Карточки будут использовать классы каталога -->
+      </section>
+    </div>
+  </main>
     <!-- Подвал -->
     <footer class="site-footer">
-  <div class="footer-top">
-    <div class="footer-logo">
-      <img src="/images/logo.png" alt="Зуф-Зуф">
-      <p>Зоомаркет ЗУФ-ЗУФ<br>Доставка товаров для животных по городу Сочи</p>
-    </div>
-
-    <div class="footer-links">
-      <div class="footer-column">
-        <h4>КАТАЛОГ</h4>
-        <ul>
-          <li><a href="#">Для кошек</a></li>
-          <li><a href="#">Для собак</a></li>
-          <li><a href="#">Для птиц/грызунов</a></li>
-          <li><a href="#">Для рыб/черепах</a></li>
-          <li><a href="#">Бренды</a></li>
-        </ul>
-      </div>
-      <div class="footer-column">
-        <h4>О КОМПАНИИ</h4>
-        <ul>
-          <li><a href="#">Гарантия</a></li>
-          <li><a href="#">Доставка</a></li>
-          <li><a href="#">Оплата</a></li>
-          <li><a href="#">Условия возврата</a></li>
-          <li><a href="#">Контакты</a></li>
-          <li><a href="#">Блог</a></li>
-          <li><a href="#">Вакансии</a></li>
-          <li><a href="#">Отзывы</a></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="footer-contacts">
-      <p><strong>+7 (938) 441-39-13</strong><br><a href="#">Заказать звонок</a></p>
-      <p><img src="/images/email.png" alt=""> info@zuf-zuf.ru</p>
-      <p><img src="/images/location.png" alt=""> Сочи, ул. Яна Фабрициуса 58/5</p>
-      <p><img src="/images/clock.png" alt=""> 7 дней в неделю<br>с 08:00 до 19:00</p>
-      <p>ИП Немыкин Дмитрий Юрьевич<br>ИНН 236003969303</p>
-    </div>
-  </div>
-
-  <div class="footer-bottom">
-    <p>2025 © Зоомаркет Зуф-Зуф. 
-      <a href="#">Карта сайта</a> 
-      <a href="#">Политика конфиденциальности</a> 
-      <a href="#">Пользовательское соглашение</a>
-    </p>
-    <div class="payment-icons">
-      <img src="/images/paypal.png" alt="PayPal">
-      <img src="/images/visa.png" alt="VISA">
-      <img src="/images/mastercard.png" alt="MasterCard">
-      <img src="/images/mir.png" alt="МИР">
-      <img src="/images/yandex.png" alt="Yandex">
-      <img src="/images/qiwi.png" alt="QIWI">
-      <img src="/images/webmoney.png" alt="WebMoney">
-    </div>
-  </div>
-</footer>
-
-
-
+        <div class="footer-top">
+          <div class="footer-logo">
+            <img src="/images/logo.png" alt="Зуф-Зуф">
+            <p>Зоомаркет ЗУФ-ЗУФ<br>Доставка товаров для животных по городу Сочи</p>
+          </div>
+      
+          <div class="footer-links">
+            <div class="footer-column">
+              <h4>КАТАЛОГ</h4>
+              <ul>
+                <li><a href="#">Для кошек</a></li>
+                <li><a href="#">Для собак</a></li>
+                <li><a href="#">Для птиц/грызунов</a></li>
+                <li><a href="#">Для рыб/черепах</a></li>
+                <li><a href="#">Бренды</a></li>
+              </ul>
+            </div>
+            <div class="footer-column">
+              <h4>О КОМПАНИИ</h4>
+              <ul>
+                <li><a href="#">Гарантия</a></li>
+                <li><a href="#">Доставка</a></li>
+                <li><a href="#">Оплата</a></li>
+                <li><a href="#">Условия возврата</a></li>
+                <li><a href="#">Контакты</a></li>
+                <li><a href="#">Блог</a></li>
+                <li><a href="#">Вакансии</a></li>
+                <li><a href="#">Отзывы</a></li>
+              </ul>
+            </div>
+          </div>
+      
+          <div class="footer-contacts">
+            <p><strong>+7 (938) 441-39-13</strong><br><a href="#">Заказать звонок</a></p>
+            <p><img src="/images/email.png" alt=""> info@zuf-zuf.ru</p>
+            <p><img src="/images/location.png" alt=""> Сочи, ул. Яна Фабрициуса 58/5</p>
+            <p><img src="/images/clock.jpg" alt=""> 7 дней в неделю<br>с 08:00 до 19:00</p>
+            <p>ИП Немыкин Дмитрий Юрьевич<br>ИНН 236003969303</p>
+          </div>
+        </div>
+      
+        <div class="footer-bottom">
+          <p>2025 © Зоомаркет Зуф-Зуф. 
+            <a href="#">Карта сайта</a> 
+            <a href="#">Политика конфиденциальности</a> 
+            <a href="#">Пользовательское соглашение</a>
+          </p>
+          <div class="payment-icons">
+            <img src="/images/paypal.png" alt="PayPal">
+            <img src="/images/visa.png" alt="VISA">
+            <img src="/images/mastercard.png" alt="MasterCard">
+            <img src="/images/mir.png" alt="МИР">
+            <img src="/images/yandex.png" alt="Yandex">
+            <img src="/images/qiwi.png" alt="QIWI">
+            <img src="/images/webmoney.png" alt="WebMoney">
+          </div>
+        </div>
+      </footer>
     <script src="/js/main.js"></script>
     <script src="/js/catalog.js"></script>
     <script src="/js/cart.js"></script> <!-- Подключите ваш класс корзины -->

@@ -609,7 +609,7 @@ if (mainPanelList) {
                         data-variant-id="${v.variant_id}"
                         data-price="${v.price}"
                         data-weight="${v.weight}">
-                  ${v.weight} ${v.weight_unit || 'г'}
+                  ${v.weight} ${v.weight_unit || 'кг'}
                 </button>
               `).join('')}
             </div>
@@ -685,7 +685,8 @@ if (mainPanelList) {
                 variantId: variantBtn.dataset.variantId,
                 name: card.querySelector('.product-name').textContent.trim(),
                 price: parseFloat(variantBtn.dataset.price),
-                weight: variantBtn.dataset.weight + ' ' + (variantBtn.dataset.weight_unit || 'г'),
+                weight: parseFloat(variantBtn.dataset.weight), // сохраняем как число
+                weightUnit: variantBtn.dataset.weight_unit || 'кг', // сохраняем единицы отдельно
                 image: card.querySelector('img').src,
                 quantity: parseInt(card.querySelector('.quantity').textContent, 10)
             };
@@ -732,7 +733,7 @@ grid.querySelectorAll('.add-to-favorites').forEach(link => {
           variantId: variantBtn.dataset.variantId,
           name: card.querySelector('.product-name').textContent.trim(),
           price: parseFloat(variantBtn.dataset.price) || 0,
-          weight: variantBtn.dataset.weight + ' ' + (variantBtn.dataset.weight_unit || 'г'),
+          weight: variantBtn.dataset.weight + ' ' + (variantBtn.dataset.weight_unit || 'кг'),
           image: card.querySelector('img')?.src || '/images/placeholder.png' // Важная правка
       };
 

@@ -215,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     data-variant-id="${v.variant_id}"
                     data-price="${v.price}"
                     data-weight="${v.weight}">
-              ${v.weight} ${v.weight_unit || 'г'}
+              ${v.weight} ${v.weight_unit || 'кг'}
             </button>
           `).join('')}
         </div>
@@ -292,7 +292,8 @@ document.addEventListener('DOMContentLoaded', () => {
                   variantId: variantBtn.dataset.variantId,
                   name: card.querySelector('.product-name').textContent.trim(),
                   price: parseFloat(variantBtn.dataset.price),
-                  weight: variantBtn.dataset.weight + ' ' + (variantBtn.dataset.weight_unit || 'г'),
+    weight: parseFloat(variantBtn.dataset.weight), // число вместо строки
+    weightUnit: variantBtn.dataset.weight_unit || 'кг',
                   image: card.querySelector('img').src,
                   quantity: parseInt(card.querySelector('.quantity').textContent, 10)
               };
@@ -339,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
             variantId: variantBtn.dataset.variantId,
             name: card.querySelector('.product-name').textContent.trim(),
             price: parseFloat(variantBtn.dataset.price) || 0,
-            weight: variantBtn.dataset.weight + ' ' + (variantBtn.dataset.weight_unit || 'г'),
+            weight: variantBtn.dataset.weight + ' ' + (variantBtn.dataset.weight_unit || 'кг'),
             image: card.querySelector('img')?.src || '/images/placeholder.png' // Важная правка
         };
   
