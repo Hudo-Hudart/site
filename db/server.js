@@ -1110,6 +1110,8 @@ app.delete('/api/carousel/:id', async (req, res) => {
 // === API: Заказы ===
 
 app.post('/api/orders', async (req, res) => {
+  console.log('Received order payload:', JSON.stringify(req.body, null, 2));
+
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -1189,23 +1191,30 @@ app.get('/api/orders', async (req, res) => {
       orders.map(async order => {
         const [items] = await db.query(`
           SELECT 
-            product_variant_id,
-            quantity,
-            weight,
-            price
-          FROM order_items
-          WHERE order_id = ?
+            oi.product_variant_id,
+            oi.quantity,
+            oi.weight,
+            oi.price,
+            p.title           AS product_name,
+            CONCAT(v.weight, ' кг') AS variant_name
+          FROM order_items oi
+          JOIN product_variants v ON v.id             = oi.product_variant_id
+          JOIN products         p ON p.id             = v.product_id
+          WHERE oi.order_id = ?
         `, [order.id]);
-
+        
         return {
           ...order,
           items: items.map(item => ({
             product_variant_id: item.product_variant_id,
-            quantity: item.quantity,
-            weight: Number(item.weight),
-            price: Number(item.price)
+            product_name:      item.product_name,
+            variant_name:      item.variant_name,
+            quantity:          item.quantity,
+            weight:            Number(item.weight),
+            price:             Number(item.price)
           }))
         };
+        
       })
     );
     
@@ -1265,26 +1274,34 @@ app.get('/api/quick-orders', async (req, res) => {
       quickOrders.map(async order => {
         const [items] = await db.query(`
           SELECT 
-            product_variant_id,
-            quantity,
-            weight,
-            price
-          FROM quick_order_items
-          WHERE quick_order_id = ?
+            qi.product_variant_id,
+            qi.quantity,
+            qi.weight,
+            qi.price,
+            p.title           AS product_name,
+            CONCAT(qi.weight, ' кг') AS variant_name
+          FROM quick_order_items qi
+          JOIN product_variants v ON v.id             = qi.product_variant_id
+          JOIN products         p ON p.id             = v.product_id
+          WHERE qi.quick_order_id = ?
+          ORDER BY qi.id 
         `, [order.id]);
-
+        
         return {
           ...order,
           items: items.map(item => ({
             product_variant_id: item.product_variant_id,
-            quantity: item.quantity,
-            weight: Number(item.weight),
-            price: Number(item.price)
+            product_name:       item.product_name,
+            variant_name:       item.variant_name,
+            quantity:           item.quantity,
+            weight:             Number(item.weight),
+            price:              Number(item.price)
           }))
         };
+        
       })
     );
-
+    console.log('⬅️ GET /api/quick-orders — returning:', JSON.stringify(ordersWithItems, null, 2));
     res.json(ordersWithItems);
   } catch (e) {
     console.error('Ошибка загрузки быстрых заказов:', e);
@@ -1293,6 +1310,7 @@ app.get('/api/quick-orders', async (req, res) => {
 });
 
 app.post('/api/quick-orders', async (req, res) => {
+  console.log('➡️ POST /api/quick-orders — body:', JSON.stringify(req.body, null, 2));
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -1308,7 +1326,7 @@ app.post('/api/quick-orders', async (req, res) => {
       items
     } = req.body;
 
-    // Создание быстрого заказа
+    // 1) Создаём сам быстрый заказ
     const [quickOrderResult] = await conn.execute(`
       INSERT INTO quick_orders (
         status,
@@ -1328,26 +1346,45 @@ app.post('/api/quick-orders', async (req, res) => {
       comment,
       parseFloat(total_amount)
     ]);
-
     const quickOrderId = quickOrderResult.insertId;
 
-    // Добавление позиций
+    // 2) Пробегаем по позициям, резолвим настоящий variant_id и вставляем
     for (const item of items) {
-      await conn.execute(`
-        INSERT INTO quick_order_items (
-          quick_order_id,
-          product_variant_id,
-          quantity,
-          weight,
-          price
-        ) VALUES (?, ?, ?, ?, ?)
-      `, [
-        quickOrderId,
-        item.id,
-        item.quantity,
-        parseFloat(item.weight) || 0,
-        parseFloat(item.price)
-      ]);
+      console.log(`   🔹 resolving variant for item:`, item);
+
+      // ищем вариант в БД по весу+цене
+      const [[variantRow]] = await conn.query(
+        `SELECT id
+           FROM product_variants
+          WHERE weight = ?
+            AND price  = ?
+          LIMIT 1
+        `,
+        [ parseFloat(item.weight) || 0, parseFloat(item.price) ]
+      );
+
+      const resolvedVariantId = variantRow?.id || item.product_variant_id;
+      if (!variantRow) {
+        console.warn(`   ⚠️ Не найден variant по весу=${item.weight}, price=${item.price}, fallback to client id=${item.product_variant_id}`);
+      }
+
+      // вставляем позицию
+      await conn.execute(
+        `INSERT INTO quick_order_items (
+           quick_order_id,
+           product_variant_id,
+           quantity,
+           weight,
+           price
+         ) VALUES (?, ?, ?, ?, ?)`,
+        [
+          quickOrderId,
+          resolvedVariantId,
+          item.quantity,
+          parseFloat(item.weight) || 0,
+          parseFloat(item.price)
+        ]
+      );
     }
 
     await conn.commit();
@@ -1361,6 +1398,7 @@ app.post('/api/quick-orders', async (req, res) => {
     conn.release();
   }
 });
+
 
 
 // === 404 для API ===
